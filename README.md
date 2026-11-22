@@ -33,7 +33,8 @@ You need the two images, [`deploy/compose.yml`](deploy/compose.yml) and an env f
 [`deploy/pbx.env.example`](deploy/pbx.env.example). The images are built by the CI into this
 project's container registry (`patchbay-web`, `patchbay-asterisk`; tags: commit SHA, `latest`,
 release tags `vX.Y.Z`): set `PBX_IMAGE_PREFIX` to the registry path of this project with a trailing
-slash and `PBX_VERSION` to a tag. `deploy/build.sh` builds them locally instead.
+slash and `PBX_VERSION` to a tag. The GitHub mirror builds the same images into
+`ghcr.io/<owner>/` (`.github/workflows/images.yml`). `deploy/build.sh` builds them locally instead.
 
 ```sh
 mkdir patchbay && cd patchbay

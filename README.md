@@ -25,7 +25,7 @@ directory the containers create themselves.
 - Login via OIDC (Keycloak group sync, auto/self provisioning) and/or local accounts.
 - Chat bot for Mattermost: missed calls, voicemail, group channels, commands.
 - Monitoring endpoints for Checkmk and Prometheus.
-- Codecs: G.722, G.711, Opus (open-source transcoder, [asterisk/opus/](asterisk/opus/README.md)).
+- Codecs: G.722, G.711, Opus (open-source transcoder traud/asterisk-opus, built into the Asterisk image).
 
 ## Quick start
 
@@ -56,4 +56,4 @@ Certificates, reverse proxy, backups, chat bot and monitoring:
   model, security model
 - [deploy/pbx.env.example](deploy/pbx.env.example) – every variable with default and description
 
-License: GPL-3.0-or-later (see LICENSE). The vendored Opus transcoder in `asterisk/opus/` is GPL-2.0 like Asterisk itself.
+License: GPL-3.0-or-later (see LICENSE). The Asterisk image builds the open-source Opus transcoder from traud/asterisk-opus (GPL-2.0, like Asterisk itself), fetched at build time.

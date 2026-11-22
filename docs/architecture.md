@@ -260,7 +260,7 @@ used by the dialplan: `route_for`, `may_dial`, `time_profile_state`, `caller_blo
 
 The PBX decides the codec (`prefer: configured`, `keep: first`), so two G.722 phones never
 transcode. Video (H.264, VP8) is allowed for devices. **Opus** comes from the open-source
-transcoder `codec_opus_open_source` vendored in [`asterisk/opus/`](../asterisk/opus/README.md)
+transcoder `codec_opus_open_source` (traud/asterisk-opus, fetched and checked in `asterisk/Dockerfile`)
 (Sangoma's binary module may not be redistributed). Prompts and hold music are 16 kHz, so Opus
 gains nothing over G.722 for them. Trunks offer G.722, A-law, µ-law and Opus per trunk.
 

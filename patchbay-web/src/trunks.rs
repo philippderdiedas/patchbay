@@ -29,7 +29,7 @@ use crate::{
 
 const OUT: &str = "/generated/iax_peers.conf";
 const OUT_SIP: &str = "/generated/pjsip_trunks.conf";
-/// Codecs a SIP trunk may offer (Opus: codec_opus_open_source, asterisk/opus/).
+/// Codecs a SIP trunk may offer (Opus: codec_opus_open_source, see asterisk/Dockerfile).
 pub const CODECS: [&str; 4] = ["g722", "alaw", "ulaw", "opus"];
 pub const KINDS: [&str; 5] = ["person", "group", "ivr", "device", "app"];
 

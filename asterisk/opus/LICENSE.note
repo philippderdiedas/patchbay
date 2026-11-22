@@ -1,2 +1,0 @@
-codec_opus_open_source.c and ex_opus.h: GPL-2.0 (as Asterisk), from https://github.com/traud/asterisk-opus
-(see README.md in this directory). They are compiled into Asterisk, not into Patchbay's own code.

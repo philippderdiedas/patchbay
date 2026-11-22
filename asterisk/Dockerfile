@@ -22,8 +22,18 @@ RUN curl -fsSLO https://downloads.asterisk.org/pub/telephony/asterisk/releases/a
  && tar xzf asterisk-${ASTERISK_VERSION}.tar.gz && mv asterisk-${ASTERISK_VERSION} asterisk
 
 WORKDIR /usr/src/asterisk
-# open-source Opus transcoder (asterisk/opus/README.md)
-COPY opus/codec_opus_open_source.c opus/ex_opus.h codecs/
+# Open-source Opus transcoder from https://github.com/traud/asterisk-opus (GPL-2.0 like Asterisk,
+# author Lorenzo Miniero), pinned to a commit and checked. Only the transcoder: Asterisk 24 has the
+# Opus format, res_format_attr_opus and asterisk/opus.h itself. Not Sangoma's binary codec_opus,
+# whose licence does not cover redistributing it in an image.
+ARG OPUS_COMMIT=a959f072d3f364be983dd27e6e250b038aaef747
+ARG OPUS_C_SHA256=b35e8917fb42cb371e8ef37a45a46aca3988130ebc38b7b8c0ff533d65756bba
+ARG OPUS_H_SHA256=4cfd088a445233ae0c9b7d823d7918dd2561cbaf7e2f458d5f4c552fe8f504f3
+RUN U=https://raw.githubusercontent.com/traud/asterisk-opus/${OPUS_COMMIT}/codecs \
+ && curl -fsSL -o codecs/codec_opus_open_source.c "$U/codec_opus_open_source.c" \
+ && curl -fsSL -o codecs/ex_opus.h "$U/ex_opus.h" \
+ && echo "${OPUS_C_SHA256}  codecs/codec_opus_open_source.c" | sha256sum -c - \
+ && echo "${OPUS_H_SHA256}  codecs/ex_opus.h" | sha256sum -c -
 RUN ./configure --with-pjproject-bundled --with-jansson-bundled=no --libdir=/usr/lib \
       --prefix=/usr --sysconfdir=/etc --localstatedir=/var \
  && make menuselect.makeopts \

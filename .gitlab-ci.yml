@@ -12,7 +12,7 @@ include:
       image: $CI_REGISTRY_IMAGE/patchbay-web
       dockerfile: $CI_PROJECT_DIR/patchbay-web/Dockerfile
       build_args: --build-arg PBX_VERSION=$GIT_DESCRIBE
-      needs: [version-info, test]
+      needs: [version-info, test, odbc-grants]
       rules:
         - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
   - component: $CI_SERVER_FQDN/it/infra/ci-templates/kaniko@1
@@ -22,7 +22,7 @@ include:
       context: $CI_PROJECT_DIR/asterisk
       dockerfile: $CI_PROJECT_DIR/asterisk/Dockerfile
       build_args: --build-arg PBX_VERSION=$GIT_DESCRIBE
-      needs: [version-info]
+      needs: [version-info, odbc-grants]
       rules:
         - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
   - component: $CI_SERVER_FQDN/it/infra/ci-templates/image-release@1
@@ -53,3 +53,33 @@ test:
   script:
     - cd patchbay-notify && cargo test
     - cd ../patchbay-web && cargo test --locked
+
+# every func_odbc query runs as the asterisk role on a freshly migrated database (missing GRANTs
+# would only show up as failed calls at runtime)
+odbc-grants:
+  stage: test
+  image: rust:1-trixie
+  interruptible: true
+  services:
+    - name: postgres:17.12-trixie
+      alias: db
+  variables:
+    POSTGRES_DB: pbx
+    POSTGRES_USER: pbx
+    POSTGRES_PASSWORD: pbx
+    PGHOST: db
+    PGUSER: pbx
+    PGPASSWORD: pbx
+    PGDATABASE: pbx
+    CARGO_HOME: $CI_PROJECT_DIR/.cargo
+  cache:
+    key: cargo-$CI_COMMIT_REF_SLUG
+    paths: [.cargo/registry, patchbay-web/target, patchbay-notify/target]
+    policy: pull
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+  script:
+    - apt-get update -qq && apt-get install -y -qq --no-install-recommends postgresql-client python3 >/dev/null
+    - cd patchbay-web && PBX_MIGRATE_DATABASE_URL=postgres://pbx:pbx@db/pbx cargo run -q --locked -- migrate
+    - cd .. && ci/odbc-as-asterisk.py

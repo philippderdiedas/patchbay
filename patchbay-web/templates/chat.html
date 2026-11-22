@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}{{ c.t.s("Chat") }}{% endblock %}
+{% block content %}
+<div class="card">
+  <h2>{{ c.t.s("Chat") }}</h2>
+  <p class="muted">{{ c.t.s("The phone system bot sends missed calls and voicemails to your chat and lets you control do not disturb, forwarding and calls from there.") }} {{ c.t.s("Chat platforms:") }} {{ platforms }}</p>
+  {% if links.is_empty() %}<p>{{ c.t.s("No chat account is linked yet.") }}</p>
+  {% else %}
+  <div class="tablewrap"><table>
+    <tr><th>{{ c.t.s("Platform") }}</th><th>{{ c.t.s("Chat account") }}</th><th>{{ c.t.s("Linked") }}</th><th></th></tr>
+    {% for l in links %}
+    <tr><td>{{ l.platform }}</td><td>{{ l.chat_name }}</td><td>{{ l.linked }}{% if l.via == "auto" %} · {{ c.t.s("by e-mail") }}{% endif %}</td>
+      <td><form class="inline" method="post" action="/me/chat/unlink" data-confirm="{{ c.t.s("Really unlink?") }}">
+        <input type="hidden" name="platform" value="{{ l.platform }}"><button class="danger">{{ c.t.s("Unlink") }}</button></form></td></tr>
+    {% endfor %}
+  </table></div>{% endif %}
+</div>
+<div class="card">
+  <h3>{{ c.t.s("Link a chat account") }}</h3>
+  {% if auto_link %}<p class="muted">{{ c.t.s("Accounts with the same e-mail address are linked automatically when you send the bot a command. Otherwise use a code:") }}</p>{% endif %}
+  {% match code %}{% when Some with (k) %}
+  <p>{{ c.t.s("Send this to the bot within 15 minutes (direct message or slash command):") }}</p>
+  <p><code style="font-size:1.3em">/pbx link {{ k }}</code></p>
+  {% when None %}
+  <form method="post" action="/me/chat/code"><button class="primary">{{ c.t.s("Create link code") }}</button></form>
+  {% endmatch %}
+</div>
+<div class="card">
+  <h3>{{ c.t.s("New voicemails") }}</h3>
+  <form method="post" action="/me/chat/delivery" class="row">
+    <select name="delivery">
+      <option value="mail" {% if delivery == "mail" %}selected{% endif %}>{{ c.t.s("by e-mail") }}</option>
+      <option value="chat" {% if delivery == "chat" %}selected{% endif %}>{{ c.t.s("in the chat") }}</option>
+      <option value="both" {% if delivery == "both" %}selected{% endif %}>{{ c.t.s("e-mail and chat") }}</option>
+      <option value="none" {% if delivery == "none" %}selected{% endif %}>{{ c.t.s("no notification") }}</option>
+    </select>
+    <button class="primary">{{ c.t.s("Save") }}</button>
+  </form>
+  <p class="muted">{{ c.t.s("Without a linked chat account, voicemails go by e-mail. Heard and deleted in the chat applies here as well.") }}</p>
+</div>
+<div class="card">
+  <h3>{{ c.t.s("Commands") }}</h3>
+  <p class="muted">{{ c.t.s("Type them in any channel or as a direct message to the bot; in a direct message also without /pbx. Calls always use your own dialling permissions.") }}</p>
+  <div class="tablewrap"><table class="cmdlist">
+    {% for (syntax, text, admin) in commands %}{% if !admin %}<tr><td class="nowrap"><code>/pbx {{ syntax }}</code></td><td>{{ text }}</td></tr>{% endif %}{% endfor %}
+  </table></div>
+  {% if c.is_admin %}<h3>{{ c.t.s("For admins") }}</h3>
+  <p class="muted">{{ c.t.s("Invite the bot into the channel first.") }}</p>
+  <div class="tablewrap"><table class="cmdlist">
+    {% for (syntax, text, admin) in commands %}{% if admin %}<tr><td class="nowrap"><code>/pbx {{ syntax }}</code></td><td>{{ text }}</td></tr>{% endif %}{% endfor %}
+  </table></div>{% endif %}
+</div>
+{% endblock %}

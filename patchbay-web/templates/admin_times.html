@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}{{ c.t.s("Time profiles") }}{% endblock %}
+{% block content %}
+{% include "admin_nav.html" %}
+<div class="card">
+  <h2>{{ c.t.s("Time profiles") }}</h2>
+  <p class="muted">{{ c.t.s("Public holidays come from the holiday calendar (empty until you add or import holidays).") }} <a href="/admin/holidays">{{ c.t.s("Holiday calendar") }}</a></p>
+  <div class="tablewrap"><table>
+    <tr><th>{{ c.t.s("Name") }}</th><th>{{ c.t.s("Now") }}</th><th>{{ c.t.s("Rules") }}</th><th>{{ c.t.s("Holidays") }}</th><th>{{ c.t.s("Used by numbers") }}</th></tr>
+    {% for p in profiles %}
+    <tr><td><a href="/admin/times/{{ p.id }}">{{ p.name }}</a></td>
+      <td>{% if p.state == "open" %}<span class="ok">{{ c.t.s("open") }}</span>{% else if p.state == "holiday" %}<span class="warn">{{ c.t.s("holiday") }}</span>{% else %}<span class="off">{{ c.t.s("closed") }}</span>{% endif %}</td>
+      <td>{{ p.rules }}</td><td>{% if p.holiday_region == "site" %}{{ c.t.s("yes") }}{% else %}{{ c.t.s("no") }}{% endif %}</td><td>{{ p.used }}</td></tr>
+    {% endfor %}
+  </table></div>
+  {% if profiles.is_empty() %}<p class="muted">{{ c.t.s("No time profiles yet: numbers without a profile are always open.") }}</p>{% endif %}
+</div>
+<div class="card">
+  <h3>{{ c.t.s("Create time profile") }}</h3>
+  <form method="post" action="/admin/times" class="row">
+    <input name="name" placeholder="{{ c.t.s("e.g. Office hours") }}" required maxlength="40">
+    <button class="primary">{{ c.t.s("Create") }}</button>
+  </form>
+</div>
+{% endblock %}

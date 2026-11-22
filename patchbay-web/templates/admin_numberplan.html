@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}{{ c.t.s("Number plan") }}{% endblock %}
+{% block content %}
+{% include "admin_nav.html" %}
+<div class="card">
+  <h2>{{ c.t.s("Number plan") }}</h2>
+  <p class="muted">{{ c.t.s("All internal numbers have 4 digits (1000–9999) and exist only once. Ranges and allocation come from the configuration (PBX_NUMBERS_*).") }}</p>
+  <div class="tablewrap"><table data-plain>
+    <tr><th>{{ c.t.s("Kind") }}</th><th>{{ c.t.s("Range") }}</th><th>{{ c.t.s("Allocation") }}</th><th>{{ c.t.s("Used") }}</th></tr>
+    {% for k in kinds %}
+    <tr><td>{{ c.t.s(k.label) }}</td>
+      <td>{% if !k.policy.enabled %}<span class="muted">{{ c.t.s("no numbers") }}</span>{% else %}{{ k.policy.range_label() }}{% if k.policy.is_pool() %} <span class="muted">({{ c.t.s("shared") }})</span>{% endif %}{% endif %}</td>
+      <td>{% if k.policy.enabled %}{% if k.policy.strategy == "choose" %}{{ c.t.s("chosen by the user") }}{% else if k.policy.strategy == "random" %}{{ c.t.s("random") }}{% else %}{{ c.t.s("next free") }}{% endif %}{% endif %}</td>
+      <td>{{ k.used }}{% if k.policy.enabled && !k.policy.is_pool() %} / {{ k.size }}{% endif %}</td></tr>
+    {% endfor %}
+  </table></div>
+  <p class="muted">{{ c.t.s("Released numbers stay blocked for") }} {{ cooldown_days }} {{ c.t.s("days") }}{% if change_days > 0 %} · {{ c.t.s("users may change their own number every") }} {{ change_days }} {{ c.t.s("days") }}{% endif %}.
+    <a href="/admin/classes#test">{{ c.t.s("Test a number") }}</a></p>
+</div>
+<div class="card">
+  <h3>{{ c.t.s("Assigned numbers") }}</h3>
+  <div class="tablewrap"><table>
+    <tr><th>{{ c.t.s("Number") }}</th><th>{{ c.t.s("Kind") }}</th><th>{{ c.t.s("Name") }}</th></tr>
+    {% for n in assigned %}<tr><td><code>{{ n.number }}</code></td><td>{{ c.t.s(n.kind_label()) }}</td><td>{{ n.name }}</td></tr>{% endfor %}
+  </table></div>
+</div>
+<div class="card" id="holds">
+  <h3>{{ c.t.s("Blocked numbers") }}</h3>
+  {% if holds.is_empty() %}<p class="muted">{{ c.t.s("None.") }}</p>{% else %}
+  <div class="tablewrap"><table>
+    <tr><th>{{ c.t.s("Number") }}</th><th>{{ c.t.s("Was") }}</th><th>{{ c.t.s("Released") }}</th><th>{{ c.t.s("Blocked until") }}</th><th></th></tr>
+    {% for h in holds %}<tr><td><code>{{ h.number }}</code></td><td>{{ c.t.s(h.kind_label()) }}</td><td>{{ h.released }}</td><td>{{ h.until }}</td>
+      <td><form class="inline" method="post" action="/admin/numberplan/{{ h.number }}/release" data-confirm="{{ c.t.s("Release this number now? Callers who still use it will reach the next owner.") }}"><button>{{ c.t.s("Release") }}</button></form></td></tr>{% endfor %}
+  </table></div>{% endif %}
+</div>
+{% endblock %}

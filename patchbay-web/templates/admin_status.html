@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}{{ c.t.s("Status") }}{% endblock %}
+{% block content %}
+{% include "admin_nav.html" %}
+{% match error %}{% when Some with (e) %}<div class="card off">{{ c.t.s("Asterisk not reachable:") }} {{ e }}</div>{% when None %}{% endmatch %}
+<div class="card">
+  <h2>{{ c.t.s("Trunks") }}</h2>
+  <table><tr><th>{{ c.t.s("Registration") }}</th><th>{{ c.t.s("Status") }}</th></tr>
+  {% for r in registrations %}<tr><td>{{ r.name }}</td>
+    <td>{% if r.status == "Registered" %}<span class="ok">{{ c.t.s(r.status.as_str()) }}</span>{% else %}<span class="off">{{ c.t.s(r.status.as_str()) }}</span>{% endif %}</td></tr>{% endfor %}
+  </table>
+</div>
+<div class="card">
+  <h2>{{ c.t.s("Registered devices") }}</h2>
+  <div class="tablewrap"><table><tr><th>{{ c.t.s("Device") }}</th><th>{{ c.t.s("Address") }}</th><th>{{ c.t.s("Client") }}</th><th>{{ c.t.s("Status") }}</th><th>RTT</th></tr>
+  {% for ct in contacts %}<tr><td>{{ ct.owner }}<br><code class="muted">{{ ct.device }}</code></td><td>{{ ct.address }}</td>
+    <td class="muted">{{ ct.user_agent }}</td><td>{{ c.t.s(ct.status.as_str()) }}</td><td>{{ ct.rtt_ms }} ms</td></tr>{% endfor %}
+  </table></div>
+</div>
+<div class="card">
+  <h2>{{ c.t.s("Active channels") }}</h2>
+  {% if channels.is_empty() %}<p class="muted">{{ c.t.s("No calls.") }}</p>{% else %}
+  <div class="tablewrap"><table><tr><th>{{ c.t.s("Channel") }}</th><th>{{ c.t.s("Caller") }}</th><th>{{ c.t.s("Connected to") }}</th><th>{{ c.t.s("Application") }}</th><th>{{ c.t.s("Duration") }}</th></tr>
+  {% for ch in channels %}<tr><td><code>{{ ch.channel }}</code></td><td>{{ ch.caller }}</td><td>{{ ch.connected }}</td><td>{{ ch.app }}</td><td>{{ ch.duration }}</td></tr>{% endfor %}
+  </table></div>{% endif %}
+</div>
+{% endblock %}

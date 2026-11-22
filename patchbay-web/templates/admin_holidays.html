@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}{{ c.t.s("Holiday calendar") }}{% endblock %}
+{% block content %}
+{% include "admin_nav.html" %}
+<div class="card">
+  <h2>{{ c.t.s("Holiday calendar") }}</h2>
+  <p class="muted">{{ c.t.s("Public holidays of this site for all time profiles with public holidays switched on. Add them by hand or import them; imported entries can be edited or deleted like manual ones.") }}
+    <a href="/admin/times">{{ c.t.s("Time profiles") }}</a></p>
+  {% if !msg.is_empty() %}<p class="ok">{{ msg }}</p>{% endif %}
+  <div class="tablewrap"><table>
+    <tr><th>{{ c.t.s("Date") }}</th><th>{{ c.t.s("Name") }}</th><th>{{ c.t.s("Source") }}</th><th></th></tr>
+    {% for h in holidays %}
+    <tr><td>{{ h.date_str() }}</td>
+      <td><form class="row" method="post" action="/admin/holidays"><input type="hidden" name="date" value="{{ h.iso() }}">
+        <input name="name" value="{{ h.name }}" maxlength="80" required> <button>{{ c.t.s("Save") }}</button></form></td>
+      <td class="muted">{% if h.source_id.is_some() %}{{ self.source_label(h.source_id) }}{% else %}{{ c.t.s("manual") }}{% endif %}</td>
+      <td><form class="inline" method="post" action="/admin/holidays/{{ h.iso() }}/delete"><button class="danger">{{ c.t.s("Remove") }}</button></form></td></tr>
+    {% endfor %}
+  </table></div>
+  {% if holidays.is_empty() %}<p class="muted">{{ c.t.s("No public holidays this year and next year.") }}</p>{% endif %}
+  {% if hidden > 0 %}<form method="post" action="/admin/holidays/restore" class="row"><span class="muted">{{ hidden }} {{ c.t.s("imported holidays deleted (not imported again).") }}</span>
+    <button>{{ c.t.s("Restore") }}</button></form>{% endif %}
+  <h3>{{ c.t.s("Add holiday") }}</h3>
+  <form method="post" action="/admin/holidays" class="row">
+    <input name="date" type="date" required> <input name="name" placeholder="{{ c.t.s("Name") }}" maxlength="80" required>
+    <button class="primary">{{ c.t.s("Add") }}</button>
+  </form>
+</div>
+
+{% match preview %}{% when Some with (pv) %}
+<div class="card">
+  <h3>{{ c.t.s("Preview") }}: {{ pv.label }}</h3>
+  <p class="muted">{{ pv.entries.len() }} {{ c.t.s("holidays") }}, {{ pv.skipped }} {{ c.t.s("events skipped (unsupported recurrence or no date)") }}</p>
+  <table>{% for e in pv.entries %}<tr><td>{{ e.0 }}</td><td>{{ e.1 }}</td></tr>{% endfor %}</table>
+  <p class="muted">{{ c.t.s("Nothing stored yet: choose Import below.") }}</p>
+</div>
+{% when None %}{% endmatch %}
+
+<div class="card">
+  <h3>{{ c.t.s("Import sources") }}</h3>
+  {% if !sources.is_empty() %}
+  <div class="tablewrap"><table>
+    <tr><th>{{ c.t.s("Source") }}</th><th>{{ c.t.s("Holidays") }}</th><th>{{ c.t.s("Keep updated") }}</th><th>{{ c.t.s("Last run") }}</th><th></th></tr>
+    {% for s in sources %}
+    <tr><td>{{ s.label() }}</td><td>{{ s.holidays }}</td>
+      <td>{% if s.kind == "ical" && s.url.is_none() %}–{% else %}<form class="inline" method="post" action="/admin/holidays/sources/{{ s.id }}/keep">
+        <label><input type="checkbox" name="keep" {% if s.keep_updated %}checked{% endif %} onchange="this.form.submit()"> {{ c.t.s("daily") }}</label></form>{% endif %}</td>
+      <td class="muted">{% if let Some(t) = s.last_run %}{{ t }} · {% endif %}{{ s.last_result }}</td>
+      <td>{% if !(s.kind == "ical" && s.url.is_none()) %}<form class="inline" method="post" action="/admin/holidays/sources/{{ s.id }}/refresh"><button>{{ c.t.s("Import now") }}</button></form>{% endif %}
+        <form class="inline" method="post" action="/admin/holidays/sources/{{ s.id }}/delete" data-confirm="{{ c.t.s("Remove the source and the holidays it imported?") }}"><button class="danger">{{ c.t.s("Remove") }}</button></form></td></tr>
+    {% endfor %}
+  </table></div>
+  {% endif %}
+  <p class="muted">{{ c.t.s("An import covers this year and next year. Daily updates replace only the holidays of that source; manual entries and your changes stay.") }}</p>
+
+  <h4>Nager.Date</h4>
+  <form method="post" action="/admin/holidays/import" enctype="multipart/form-data" class="row">
+    <input type="hidden" name="kind" value="nager">
+    {% if countries.is_empty() %}
+    <input name="country" placeholder="{{ c.t.s("Country code, e.g. DE") }}" maxlength="2" required class="short">
+    {% else %}
+    <select name="country" required>{% for k in countries %}<option value="{{ k.code }}">{{ k.name }} ({{ k.code }})</option>{% endfor %}</select>
+    {% endif %}
+    <input name="subdivision" placeholder="{{ c.t.s("Subdivision, e.g. DE-SH (optional)") }}" maxlength="10">
+    <label><input type="checkbox" name="keep" checked> {{ c.t.s("keep updated") }}</label>
+    <button name="action" value="preview">{{ c.t.s("Preview") }}</button>
+    <button class="primary" name="action" value="import">{{ c.t.s("Import") }}</button>
+  </form>
+  <p class="muted">{{ c.t.s("Without a subdivision only nationwide holidays are imported.") }} {{ nager_url }}</p>
+
+  <h4>iCal</h4>
+  <form method="post" action="/admin/holidays/import" enctype="multipart/form-data" class="row">
+    <input type="hidden" name="kind" value="ical">
+    <input name="url" type="url" placeholder="https://…/holidays.ics">
+    <span class="muted">{{ c.t.s("or") }}</span> <input type="file" name="file" accept=".ics,text/calendar">
+    <label><input type="checkbox" name="keep"> {{ c.t.s("keep updated (URL only)") }}</label>
+    <button name="action" value="preview">{{ c.t.s("Preview") }}</button>
+    <button class="primary" name="action" value="import">{{ c.t.s("Import") }}</button>
+  </form>
+  <p class="muted">{{ c.t.s("Single and all-day events and yearly repeating events are imported; other repeating events are skipped.") }}</p>
+</div>
+{% endblock %}

@@ -1,0 +1,9 @@
+secrets/
+*.pw
+*.key
+patchbay-web/target/
+.claude/
+patchbay-notify/target/
+# library crate built only as a path dependency; patchbay-web/Cargo.lock pins its dependencies
+patchbay-notify/Cargo.lock
+.cargo/

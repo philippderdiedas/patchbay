@@ -1,0 +1,27 @@
+# A call from a device to an app and an outbound call: no target, so no events (hand-written).
+Event: Newchannel
+Channel: PJSIP/dev1020-00000040
+CallerIDNum: 1020
+Uniqueid: 5.1
+Linkedid: 5.1
+
+Event: Hangup
+Uniqueid: 5.1
+Linkedid: 5.1
+
+Event: Newchannel
+Channel: PJSIP/dev1020-00000041
+Uniqueid: 6.1
+Linkedid: 6.1
+
+Event: DialBegin
+Linkedid: 6.1
+DestChannel: PJSIP/sip-6-00000042
+
+Event: DialEnd
+Linkedid: 6.1
+DestChannel: PJSIP/sip-6-00000042
+DialStatus: ANSWER
+
+Event: Hangup
+Uniqueid: 6.1

@@ -1,0 +1,39 @@
+# 1020 rings, nobody answers, no no-answer target: the PBX ends the call after the ring time
+# (PbxNoAnswer marker) – reported as "no answer", not "caller hung up".
+#t 0
+Event: Newchannel
+Channel: PJSIP/provider-054-00000020
+CallerIDNum: +4940123456
+CallerIDName: +4940123456
+Uniqueid: 3.1
+Linkedid: 3.1
+
+Event: UserEvent
+UserEvent: PbxTarget
+Kind: user
+Number: 1020
+Did: +494012345054
+CallerIDNum: +4940123456
+Uniqueid: 3.1
+Linkedid: 3.1
+
+Event: DialBegin
+Linkedid: 3.1
+DestChannel: PJSIP/dev1020a-00000021
+
+#t 25
+Event: DialEnd
+Linkedid: 3.1
+DestChannel: PJSIP/dev1020a-00000021
+DialStatus: NOANSWER
+
+Event: UserEvent
+UserEvent: PbxNoAnswer
+Number: 1020
+Uniqueid: 3.1
+Linkedid: 3.1
+
+#t 28
+Event: Hangup
+Uniqueid: 3.1
+Linkedid: 3.1

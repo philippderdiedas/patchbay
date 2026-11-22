@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}{{ c.t.s("Outbound routes") }}{% endblock %}
+{% block content %}
+{% include "admin_nav.html" %}
+<form method="post" action="/admin/routes/{% if is_new %}new{% else %}{{ r.id }}{% endif %}" class="card">
+  <h2>{% if is_new %}{{ c.t.s("New route") }}{% else %}{{ r.name }}{% endif %}</h2>
+  <table class="form">
+    <tr><th>{{ c.t.s("Name") }}</th><td><input name="name" value="{{ r.name }}" required maxlength="60"></td></tr>
+    <tr><th>{{ c.t.s("Priority") }}</th><td><input name="priority" type="number" min="0" max="999" value="{{ r.priority }}" class="short"> <span class="muted">{{ c.t.s("lower = checked first") }}</span></td></tr>
+    <tr><th>{{ c.t.s("Prefix") }}</th><td><input name="match_prefix" value="{{ r.match_prefix }}" required pattern="\+?[0-9]+" maxlength="20"></td></tr>
+    <tr><th>{{ c.t.s("Length") }}</th><td class="row"><input name="min_len" type="number" min="1" max="30" value="{{ r.min_len }}" class="short"> – <input name="max_len" type="number" min="1" max="30" value="{{ r.max_len_str() }}" class="short" placeholder="∞"></td></tr>
+    <tr><th>{{ c.t.s("Action") }}</th><td><select name="action">
+      <option value="route" {% if r.action == "route" %}selected{% endif %}>{{ c.t.s("dial via trunk") }}</option>
+      <option value="deny" {% if r.action == "deny" %}selected{% endif %}>{{ c.t.s("block") }}</option>
+    </select></td></tr>
+    <tr><th>{{ c.t.s("Trunk") }}</th><td><select name="trunk_id"><option value="">–</option>
+      {% for tr in trunks %}<option value="{{ tr.id }}" {% if r.trunk_is(tr.id) %}selected{% endif %}>{{ tr.name }}</option>{% endfor %}</select></td></tr>
+    <tr><th>{{ c.t.s("Strip digits") }}</th><td><input name="strip_digits" type="number" min="0" max="20" value="{{ r.strip_digits }}" class="short"></td></tr>
+    <tr><th>{{ c.t.s("Prepend") }}</th><td><input name="prepend" value="{{ r.prepend }}" maxlength="10" pattern="[0-9+]*" class="short"></td></tr>
+    <tr><th>{{ c.t.s("Caller ID") }}</th><td class="row"><select name="clip_mode">
+      <option value="user" {% if r.clip_mode == "user" %}selected{% endif %}>{{ c.t.s("user's number, else route number") }}</option>
+      <option value="route" {% if r.clip_mode == "route" %}selected{% endif %}>{{ c.t.s("route number") }}</option>
+    </select>
+    <select name="clip_did_id"><option value="">–</option>
+      {% for d in dids %}<option value="{{ d.id }}" {% if r.did_is(d.id) %}selected{% endif %}>{{ d.e164 }} {{ d.label }}</option>{% endfor %}</select></td></tr>
+    <tr><th>{{ c.t.s("Class") }}</th><td><select name="route_class">
+      {% for cl in classes %}<option value="{{ cl.key }}" {% if r.route_class == cl.key %}selected{% endif %}>{{ cl.name }} ({{ cl.key }})</option>{% endfor %}</select></td></tr>
+  </table>
+  <p class="row"><button class="primary">{{ c.t.s("Save") }}</button> <a href="/admin/classes">{{ c.t.s("Cancel") }}</a></p>
+</form>
+{% endblock %}

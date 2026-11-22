@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Example: a Wyoming TTS server for patchbay-web (script apps, PBX_TTS). Not part of the PBX stack;
+# run it anywhere patchbay-web can reach, or reuse the one Home Assistant already has.
+#
+#   docker compose -f compose.tts.yml up -d
+#   pbx.env:  PBX_TTS=wyoming://<host>:10200
+#             PBX_TTS_VOICE_DE=de_DE-thorsten-medium   (default)
+#             PBX_TTS_VOICE_EN=en_US-lessac-medium     (default)
+#
+# The voices are downloaded on first start into the data volume. Listen only where patchbay-web can
+# reach it (the protocol has no authentication), e.g. bind to the PBX host's address.
+services:
+  piper:
+    image: rhasspy/wyoming-piper:latest
+    command: --voice de_DE-thorsten-medium
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:10200:10200"
+    volumes:
+      - piper-data:/data
+volumes:
+  piper-data:

@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}{{ n.e164 }}{% endblock %}
+{% block content %}
+{% include "admin_nav.html" %}
+<form method="post" action="/admin/numbers/{{ n.id }}/routing" class="card">
+  <h2>{{ n.e164 }} <span class="muted">{{ n.label }}</span> <a href="/admin/flow/did/{{ n.id }}" class="noprint" style="font-size:15px">{{ c.t.s("Show call flow") }}</a></h2>
+  <table class="form">
+    <tr><th>{{ c.t.s("Time profile") }}</th><td><select name="time_profile_id"><option value="">{{ c.t.s("(none – always open)") }}</option>
+      {% for p in profiles %}<option value="{{ p.0 }}" {% if n.profile_is(p.0) %}selected{% endif %}>{{ p.1 }}</option>{% endfor %}</select></td></tr>
+    <tr><th>{{ c.t.s("Open") }}</th><td>{% let ts = open.clone() %}{% include "target_select.html" %}</td></tr>
+    <tr><th>{{ c.t.s("Closed") }}</th><td>{% let ts = closed.clone() %}{% include "target_select.html" %}</td></tr>
+    <tr><th>{{ c.t.s("Holiday / closing day") }}</th><td>{% let ts = holiday.clone() %}{% include "target_select.html" %}</td></tr>
+  </table>
+  <p class="row"><button class="primary">{{ c.t.s("Save") }}</button> <a href="/admin/numbers">{{ c.t.s("Cancel") }}</a></p>
+</form>
+{% endblock %}

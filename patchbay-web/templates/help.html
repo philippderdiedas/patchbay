@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}{{ c.t.s("Help") }}{% endblock %}
+{% block content %}
+<div class="card help">
+  <div class="row noprint" style="justify-content: space-between">
+    <h2>{{ c.t.s("Phone help") }}</h2>
+    <button type="button" class="primary" data-print>{{ c.t.s("Print") }}</button>
+  </div>
+  <h2 class="printonly">{{ c.site_title }} · {{ c.t.s("Phone help") }}</h2>
+  {% if let Some((ext, name)) = me %}
+  <p>{{ name }} · {{ c.t.s("Your extension") }} <b>{{ ext }}</b>{% if let Some(pg) = pickup_group %} · {{ c.t.s("Pickup group") }} <b>{% if pg == "all" %}{{ c.t.s("all colleagues") }}{% else %}{{ pg }}{% endif %}</b>{% endif %}</p>
+  {% endif %}
+</div>
+
+<div class="card help">
+  <h2>{{ c.t.s("Dialing") }}</h2>
+  <table data-plain>
+    <tr><th>{{ c.t.s("Dial") }}</th><th>{{ c.t.s("What happens") }}</th></tr>
+    {% for (range, kinds) in ranges %}
+    <tr><td><code>{{ range }}</code></td><td>{% for k in kinds %}{% if !loop.first %}, {% endif %}{{ c.t.s(k) }}{% endfor %}</td></tr>
+    {% endfor %}
+    <tr><td><code>0</code> + {{ c.t.s("number") }}</td><td>{{ c.t.s("External call, e.g. 0451 123456 or 0176 1234567 (no extra 0 for the outside line)") }}</td></tr>
+    <tr><td><code>+</code>{{ c.t.s("country code") }} …</td><td>{{ c.t.s("International, e.g. +44 20 …") }}</td></tr>
+    <tr><td>{% for n in emergency %}{% if !loop.first %} · {% endif %}<code>{{ n }}</code>{% endfor %}</td><td>{{ c.t.s("Emergency (always possible)") }}</td></tr>
+    <tr><td>{{ c.t.s("short numbers") }} · <code>116xxx</code></td><td>{{ c.t.s("Public service numbers (as the dial rules allow)") }}</td></tr>
+    {% for s in sites %}
+    <tr><td><code>{{ s.number }}</code> + {{ c.t.s("4-digit number") }}</td><td>{{ s.name }}</td></tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="card help">
+  <h2>{{ c.t.s("Feature codes") }}</h2>
+  <table data-plain>
+    <tr><th>{{ c.t.s("Dial") }}</th><th>{{ c.t.s("What happens") }}</th></tr>
+    {# the list lives in help.rs (FEATURE_CODES), shared with the "Services" phone book #}
+    {% for f in codes %}
+    <tr><td><code>{{ f.prefix }}</code>{% if let Some(a) = f.arg %}{% if f.suffix.is_empty() %} + {% endif %}{{ c.t.s(a) }}{% endif %}{% if !f.suffix.is_empty() %}<code>{{ f.suffix }}</code>{% endif %}</td><td>{{ c.t.s(f.help) }}</td></tr>
+    {% endfor %}
+  </table>
+  <p class="muted">{{ c.t.s("Do not disturb and forwarding can also be set on the start page of this web interface.") }}</p>
+  <p class="muted noprint">{{ c.t.s("Codes without a number, emergency numbers, call groups, voice menus and organization apps are also in the phone book under “Services” (web page and CardDAV), so they can be called from the contacts of the phone.") }} <a href="/phonebook#services">{{ c.t.s("Phone book") }}</a></p>
+</div>
+
+<div class="card help">
+  <h2>{{ c.t.s("During a call") }}</h2>
+  <table data-plain>
+    <tr><th>{{ c.t.s("Button") }}</th><th>{{ c.t.s("What happens") }}</th></tr>
+    <tr><td>{{ c.t.s("Hold button") }}</td><td>{{ c.t.s("The caller hears hold music") }}</td></tr>
+    <tr><td>{{ c.t.s("Transfer button") }}</td><td>{{ c.t.s("Transfer the call (directly or after asking first); use the button of your phone or app") }}</td></tr>
+  </table>
+  <h3>{{ c.t.s("In a conference room") }}</h3>
+  <table data-plain>
+    <tr><td><code>*1</code></td><td>{{ c.t.s("Mute / unmute yourself") }}</td></tr>
+    <tr><td><code>*2</code></td><td>{{ c.t.s("Lock / unlock the room (moderators only)") }}</td></tr>
+    <tr><td><code>*3</code></td><td>{{ c.t.s("Remove the last participant who joined (moderators only)") }}</td></tr>
+    <tr><td><code>*4</code></td><td>{{ c.t.s("Mute / unmute all other participants (moderators only)") }}</td></tr>
+    <tr><td><code>*0</code></td><td>{{ c.t.s("Enter the moderator PIN (you rejoin the room as moderator)") }}</td></tr>
+  </table>
+  <h3>{{ c.t.s("Listening to voicemail (*97)") }}</h3>
+  <p class="muted">{{ c.t.s("New messages first, then the ones already heard. Own mailbox and the mailboxes of your call groups. A message played to the end counts as heard.") }}</p>
+  <table data-plain>
+    <tr><td><code>5</code> / <code>1</code></td><td>{{ c.t.s("Play the message again") }}</td></tr>
+    <tr><td><code>6</code> / <code>2</code></td><td>{{ c.t.s("Next message") }}</td></tr>
+    <tr><td><code>4</code></td><td>{{ c.t.s("Previous message") }}</td></tr>
+    <tr><td><code>7</code></td><td>{{ c.t.s("Delete the message") }}</td></tr>
+    <tr><td><code>9</code></td><td>{{ c.t.s("Mark as heard") }}</td></tr>
+    <tr><td><code>*</code> / <code>0</code></td><td>{{ c.t.s("Key help") }}</td></tr>
+    <tr><td><code>#</code></td><td>{{ c.t.s("End") }}</td></tr>
+  </table>
+</div>
+
+{% if me.is_some() %}
+<div class="card help">
+  <h2>{{ c.t.s("Your numbers") }}</h2>
+  <table data-plain>
+    {% for d in devices %}<tr><td><code>{{ d.number }}</code></td><td>{{ c.t.s("Device") }}: {{ d.name }}</td></tr>{% endfor %}
+    {% for g in my_groups %}<tr><td><code>{{ g.number }}</code></td><td>{{ c.t.s("Call group") }}: {{ g.name }}</td></tr>{% endfor %}
+    {% for a in my_apps %}<tr><td><code>{{ a.number }}</code></td><td>{{ c.app_kind(a.kind) }}: {{ a.name }}</td></tr>{% endfor %}
+  </table>
+  {% if devices.is_empty() && my_groups.is_empty() && my_apps.is_empty() %}<p class="muted">{{ c.t.s("No devices, groups or apps yet.") }}</p>{% endif %}
+</div>
+{% endif %}
+
+<div class="card help">
+  <h2>{{ c.t.s("Organization numbers") }}</h2>
+  <table data-plain>
+    {% for g in groups %}<tr><td><code>{{ g.number }}</code></td><td>{{ c.t.s("Call group") }}: {{ g.name }}</td></tr>{% endfor %}
+    {% for i in ivrs %}<tr><td><code>{{ i.number }}</code></td><td>{{ c.t.s("Voice menu") }}: {{ i.name }}</td></tr>{% endfor %}
+    {% for a in company_apps %}<tr><td><code>{{ a.number }}</code></td><td>{{ c.app_kind(a.kind) }}: {{ a.name }}</td></tr>{% endfor %}
+  </table>
+  <p class="muted noprint"><a href="/phonebook">{{ c.t.s("Colleagues: see the phone book.") }}</a></p>
+</div>
+{% endblock %}

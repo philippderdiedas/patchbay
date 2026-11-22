@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}{{ c.t.s("App password") }}{% endblock %}
+{% block content %}
+<div class="card">
+  <h2>{{ c.t.s("App password") }} · {{ label }}</h2>
+  <p>{{ c.t.s("<b>The password is shown only now.</b> It is not stored.")|safe }}</p>
+  <table class="form">
+    <tr><th>{{ c.t.s("Server") }}</th><td><code>{{ url }}</code></td></tr>
+    <tr><th>{{ c.t.s("Username") }}</th><td><code>{{ username }}</code></td></tr>
+    <tr><th>{{ c.t.s("Password") }}</th><td><code>{{ password }}</code></td></tr>
+  </table>
+  <h3>{{ c.t.s("Setup") }}</h3>
+  <ul>
+    <li><b>iPhone / iPad:</b> {{ c.t.s("Settings → Apps → Contacts → Contacts Accounts → Add Account → Other → Add CardDAV Account. Server: the server address above.") }}</li>
+    <li><b>Mac:</b> {{ c.t.s("Contacts → Settings → Accounts → + → Other Contacts Account → CardDAV, account type Manual.") }}</li>
+    <li><b>Android:</b> {{ c.t.s("Install DAVx⁵, add an account with “Login with URL and user name”, then enable the address books.") }}</li>
+    <li><b>Thunderbird:</b> {{ c.t.s("Address Book → New Address Book → Add CardDAV Address Book.") }}</li>
+  </ul>
+  <p><a href="/phonebook#carddav">{{ c.t.s("Done") }}</a></p>
+</div>
+{% endblock %}

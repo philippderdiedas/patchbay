@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}{{ u.display_name }}{% endblock %}
+{% block content %}
+{% include "admin_nav.html" %}
+<form method="post" action="/admin/users/{{ u.id }}/edit" class="card">
+  <h2>{{ u.extension }} · {{ u.display_name }} <span class="muted">({{ c.t.s(u.kind.as_str()) }})</span></h2>
+  <table class="form">
+    <tr><th>{{ c.t.s("Name") }}</th><td><input name="display_name" value="{{ u.display_name }}" required maxlength="40"></td></tr>
+    <tr><th>{{ c.t.s("Email") }}</th><td><input name="email" type="email" value="{% match u.email %}{% when Some with (e) %}{{ e }}{% when None %}{% endmatch %}"></td></tr>
+    <tr><th>{{ c.t.s("Extension") }}</th><td><input name="extension" type="number" min="1000" max="9999" value="{{ u.extension }}" required class="short">
+      <span class="muted">{{ c.t.s("Devices keep their own numbers; caller ID, mailbox and phone book move to the new extension.") }}</span></td></tr>
+    <tr><th>{{ c.t.s("Active") }}</th><td><label><input type="checkbox" name="enabled" {% if u.enabled %}checked{% endif %}> {{ c.t.s("User active (off = all devices locked)") }}</label></td></tr>
+    <tr><th>{{ c.t.s("Web interface") }}</th><td>
+      <label style="display:block"><input type="checkbox" name="web_access" {% if u.web_access %}checked{% endif %}> {{ c.t.s("May log in to the web interface") }}</label>
+      <label style="display:block"><input type="checkbox" name="web_admin" {% if u.web_admin %}checked{% endif %}> {{ c.t.s("Administrator") }}</label>
+      {% if auth.oidc %}<span class="muted">{{ c.t.s("Single sign-on users are also allowed through the groups") }} <code>{{ group_webui }}</code> / <code>{{ group_admin }}</code>.</span>{% endif %}</td></tr>
+    <tr><th>{{ c.t.s("Phone access") }}</th><td>
+      {% if u.phone_by_sync(auth.kc_sync) %}
+      <label><input type="checkbox" {% if u.phone_allowed %}checked{% endif %} disabled> {{ c.t.s("May use the phone system (devices, apps)") }}</label>
+      <span class="muted">{{ c.t.s("set by the Keycloak sync from the group") }} <code>{{ group_phone }}</code></span>
+      {% else %}
+      <label><input type="checkbox" name="phone_allowed" {% if u.phone_allowed %}checked{% endif %}> {{ c.t.s("May use the phone system (devices, apps)") }}</label>
+      {% endif %}</td></tr>
+    <tr><th>{{ c.t.s("SIP devices") }}</th><td><label><input type="checkbox" name="allow_sip_devices" {% if u.allow_sip_devices %}checked{% endif %}> {{ c.t.s("May create own SIP devices (not only Linphone)") }}</label></td></tr>
+    <tr><th>{{ c.t.s("Do not disturb") }}</th><td><label><input type="checkbox" name="dnd" {% if u.dnd %}checked{% endif %}> {{ c.t.s("DND – calls go straight to “no answer”") }}</label></td></tr>
+    <tr><th>{{ c.t.s("Ring time") }}</th><td><input name="ring_timeout_s" type="number" min="5" max="300" value="{{ u.ring_timeout_s }}" class="short"> s</td></tr>
+    <tr><th>{{ c.t.s("Pickup group") }}</th><td><input name="pickup_group" value="{{ u.pickup() }}" maxlength="30" class="short" placeholder="all">
+      <span class="muted">{{ c.t.s("Users in the same pickup group can pick up each other's calls with *8.") }}</span></td></tr>
+    <tr><th>{{ c.t.s("Language of announcements") }}</th><td><select name="language">
+      <option value="en" {% if u.language == "en" %}selected{% endif %}>{{ c.t.s("English") }}</option>
+      <option value="de" {% if u.language == "de" %}selected{% endif %}>{{ c.t.s("German") }}</option></select></td></tr>
+    <tr><th>{{ c.t.s("Outbound calls") }}</th><td>
+      {% for cl in classes %}{% if !cl.builtin %}
+      {% if u.via_group(cl.kc_group) %}
+      <label style="display:block"><input type="checkbox" checked disabled>
+        {{ cl.name }} <span class="muted">{{ c.t.s("via group") }} <code>{{ cl.kc_group.clone().unwrap_or_default() }}</code></span></label>
+      {% else %}
+      <label style="display:block"><input type="checkbox" name="classes" value="{{ cl.key }}" {% if u.has(cl.key) %}checked{% endif %}>
+        {{ cl.name }} <span class="muted">{{ cl.description }}</span></label>
+      {% endif %}
+      {% endif %}{% endfor %}
+      <span class="muted">{{ c.t.s("Internal calls and emergency numbers are always allowed.") }}</span></td></tr>
+    <tr><th>{{ c.t.s("Caller ID") }}</th><td><select name="outbound_did_id">
+      <option value="">{{ c.t.s("Route default") }}</option>
+      {% for d in dids %}<option value="{{ d.id }}" {% if u.outbound_did_id == Some(d.id.clone()) %}selected{% endif %}>{{ d.e164 }} {{ d.label }}</option>{% endfor %}
+    </select></td></tr>
+    <tr><th>{{ c.t.s("Forward immediately") }}</th><td>{% let ts = fwd.clone() %}{% include "target_select.html" %}</td></tr>
+    <tr><th>{{ c.t.s("No answer") }}</th><td>{% let ts = noans.clone() %}{% include "target_select.html" %}</td></tr>
+  </table>
+  <p class="row"><button class="primary">{{ c.t.s("Save") }}</button> <a href="/admin/users/{{ u.id }}">{{ c.t.s("Cancel") }}</a></p>
+</form>
+<form method="post" action="/admin/users/{{ u.id }}/login" class="card" id="login" autocomplete="off">
+  <h3>{{ c.t.s("Local login") }}</h3>
+  {% if !auth.local %}<p class="warn">{{ c.t.s("Local logins are switched off at this site (PBX_AUTH).") }}</p>{% endif %}
+  <table class="form">
+    <tr><th>{{ c.t.s("Login name") }}</th><td><input name="login" value="{{ u.login_name() }}" maxlength="64" required autocapitalize="none" spellcheck="false"></td></tr>
+    <tr><th>{{ c.t.s("New password") }}</th><td><input name="password" type="password" autocomplete="new-password" minlength="10" maxlength="256" {% if u.local_login.is_none() %}required{% endif %}>
+      <span class="muted">{% if u.local_login.is_some() %}{{ c.t.s("empty: keep the password.") }} {% endif %}{{ c.t.s("At least 10 characters. Setting a password ends all sessions of this login.") }}</span></td></tr>
+  </table>
+  <p class="row"><button class="primary" name="action" value="save">{% if u.local_login.is_some() %}{{ c.t.s("Save login") }}{% else %}{{ c.t.s("Create login") }}{% endif %}</button></p>
+  <p class="muted">{{ c.t.s("Login names: 2–64 characters a–z, 0–9, . _ - @. The person also needs the web interface switch above to log in.") }}</p>
+</form>
+{% if u.local_login.is_some() %}
+<form method="post" action="/admin/users/{{ u.id }}/login" class="card" data-confirm="{{ c.t.s("Remove the local login?") }}">
+  <input type="hidden" name="action" value="delete"><button class="danger">{{ c.t.s("Remove login") }}</button>
+</form>
+{% endif %}
+{% endblock %}

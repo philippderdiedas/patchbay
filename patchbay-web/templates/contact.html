@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}{% if is_new %}{{ c.t.s("New contact") }}{% else %}{{ k.name }}{% endif %}{% endblock %}
+{% block content %}
+<form method="post" action="/contacts/{% if is_new %}new{% else %}{{ k.id }}{% endif %}" class="card">
+  <h2>{% if is_new %}{{ c.t.s("New contact") }}{% else %}{{ k.name }}{% endif %}</h2>
+  <table class="form">
+    <tr><th>{{ c.t.s("Name") }}</th><td><input name="name" value="{{ k.name }}" required maxlength="80" autofocus></td></tr>
+    <tr><th>{{ c.t.s("Company") }}</th><td><input name="organization" value="{{ k.org() }}" maxlength="80"></td></tr>
+    <tr><th>{{ c.t.s("Phone") }}</th><td><input name="phone" value="{{ k.phone_str() }}" type="tel" maxlength="40" placeholder="040 123456"></td></tr>
+    <tr><th>{{ c.t.s("Mobile") }}</th><td><input name="mobile" value="{{ k.mobile_str() }}" type="tel" maxlength="40" placeholder="0176 1234567"></td></tr>
+    <tr><th>{{ c.t.s("E-mail") }}</th><td><input name="email" value="{{ k.email_str() }}" type="email" maxlength="120"></td></tr>
+    <tr><th>{{ c.t.s("Note") }}</th><td><textarea name="note" rows="2" maxlength="500">{{ k.note_str() }}</textarea></td></tr>
+  </table>
+  <p class="row"><button class="primary">{{ c.t.s("Save") }}</button> <a href="/phonebook#contacts">{{ c.t.s("Cancel") }}</a></p>
+</form>
+{% if !is_new %}
+<form method="post" action="/contacts/{{ k.id }}/delete" data-confirm="{{ c.t.s("Really delete?") }}"><button class="danger">{{ c.t.s("Delete") }}</button></form>
+{% endif %}
+{% endblock %}

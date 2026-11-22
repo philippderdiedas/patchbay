@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}{{ c.t.s("My media") }}{% endblock %}
+{% block content %}
+<div class="card">
+  <h2>{{ c.t.s("My media") }}</h2>
+  <p class="muted">{{ "{:.1}"|format(used_mb) }} / {{ quota_mb }} MB</p>
+  <div class="tablewrap"><table>
+    <tr><th>{{ c.t.s("Name") }}</th><th>{{ c.t.s("Duration") }}</th><th>{{ c.t.s("Listen") }}</th><th></th></tr>
+    {% for m in media %}
+    <tr><td>{{ m.name }}</td><td>{% match m.duration_s %}{% when Some with (d) %}{{ "{:.0}"|format(d) }} s{% when None %}–{% endmatch %}</td>
+      <td><audio controls preload="none" src="/media/{{ m.id }}/preview"></audio></td>
+      <td>{% if m.used == 0 %}<form class="inline" method="post" action="/media/{{ m.id }}/delete" data-confirm="{{ c.t.s("Really delete?") }}"><button class="danger">{{ c.t.s("Delete") }}</button></form>
+        {% else %}<span class="muted">{{ m.used }}× {{ c.t.s("used") }}</span>{% endif %}</td></tr>
+    {% endfor %}
+  </table></div>
+</div>
+{% if user_moh %}
+<form method="post" action="/media/hold-music" class="card" id="hold-music">
+  <h2>{{ c.t.s("My hold music") }}</h2>
+  <p class="muted">{{ c.t.s("Plays when you put a caller on hold. Without a selection the default hold music plays.") }}</p>
+  {% for t in hold_tracks %}<label style="display:block"><input type="checkbox" name="media" value="{{ t.id }}" {% if t.selected %}checked{% endif %}> {{ t.name }}
+    <audio controls preload="none" src="/media/{{ t.id }}/preview"></audio></label>{% endfor %}
+  {% if hold_tracks.is_empty() %}<p class="muted">{{ c.t.s("Upload music below first.") }}</p>{% endif %}
+  <p class="row"><label><input type="checkbox" name="shuffle" {% if hold_shuffle %}checked{% endif %}> {{ c.t.s("shuffle") }}</label>
+    <button class="primary">{{ c.t.s("Save") }}</button></p>
+</form>
+{% endif %}
+<div class="card">
+  <h3>{{ c.t.s("Upload") }}</h3>
+  <form method="post" action="/media" enctype="multipart/form-data" class="row">
+    <input type="file" name="file" accept="audio/*,.mp3,.wav,.ogg,.m4a,.flac" required>
+    <input name="name" placeholder="{{ c.t.s("Name (default: file name)") }}" maxlength="60">
+    <button class="primary">{{ c.t.s("Upload") }}</button>
+  </form>
+  <p class="muted">{{ c.t.s("MP3, WAV, OGG, M4A, FLAC up to 25 MB / 30 min. Converted automatically and loudness-normalised.") }}
+  {{ c.t.s("Music played to external callers is a public performance (GEMA): only use music you are allowed to use.") }}</p>
+</div>
+{% endblock %}

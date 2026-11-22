@@ -1,0 +1,11 @@
+{# Transport and SRTP mode for plain SIP devices (ignored for Linphone: always TLS + SRTP). #}
+<select name="transport" title="{{ c.t.s("Transport") }}">
+  <option value="tls" {% if tsel_t == "tls" %}selected{% endif %}>TLS (5061)</option>
+  <option value="tcp" {% if tsel_t == "tcp" %}selected{% endif %}>TCP (5060)</option>
+  <option value="udp" {% if tsel_t == "udp" %}selected{% endif %}>UDP (5060)</option>
+</select>
+<select name="srtp" title="SRTP">
+  <option value="optional" {% if tsel_s == "optional" %}selected{% endif %}>{{ c.t.s("SRTP if possible") }}</option>
+  <option value="required" {% if tsel_s == "required" %}selected{% endif %}>{{ c.t.s("SRTP required") }}</option>
+  <option value="off" {% if tsel_s == "off" %}selected{% endif %}>{{ c.t.s("no SRTP") }}</option>
+</select>

@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}{{ c.t.s("Phone book") }}{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="row noprint" style="justify-content: space-between">
+    <h2>{{ c.t.s("Phone book · internal") }}</h2>
+    <button type="button" data-print title="{{ c.t.s("Colleagues and services as a list, e.g. to put up next to a phone") }}">{{ c.t.s("Print") }}</button>
+  </div>
+  <h2 class="printonly">{{ c.site_title }} · {{ c.t.s("Phone book") }}</h2>
+  <div class="tablewrap"><table data-presence-poll="/phonebook/status">
+    <tr><th>{{ c.t.s("Extension") }}</th><th>{{ c.t.s("Name") }}</th><th class="noprint">{{ c.t.s("Status") }}</th><th class="noprint">{{ c.t.s("Devices") }}</th></tr>
+    {% for e in entries %}
+    <tr><td>{% let num = e.extension.to_string() %}{% include "dial.html" %}</td><td>{{ e.display_name }}</td>
+      <td class="noprint" data-presence="{{ e.extension }}"><span class="presence presence-{{ e.presence }}">{% if e.presence == "available" %}{{ c.t.s("available") }}{% else if e.presence == "busy" %}{{ c.t.s("on the phone") }}{% else if e.presence == "ringing" %}{{ c.t.s("ringing") }}{% else if e.presence == "dnd" %}{{ c.t.s("do not disturb") }}{% else %}{{ c.t.s("offline") }}{% endif %}</span></td>
+      <td class="noprint">{% if e.devices > 0 %}{{ e.devices }}{% else %}<span class="muted">–</span>{% endif %}</td></tr>
+    {% endfor %}
+  </table></div>
+</div>
+<div class="card" id="services">
+  <h2>{{ c.t.s("Services") }}</h2>
+  <div class="tablewrap"><table>
+    <tr><th>{{ c.t.s("Number") }}</th><th>{{ c.t.s("Name") }}</th><th>{{ c.t.s("Kind") }}</th></tr>
+    {% for s in services %}
+    <tr><td>{% if s.internal() %}{% let num = s.number.clone() %}{% include "dial.html" %}{% else %}<a class="dial" href="{{ s.tel() }}">{{ s.number }}</a>{% endif %}</td>
+      <td>{{ s.name }}{% if let Some(n) = s.note %} <span class="muted">· {{ n }}</span>{% endif %}</td><td>{{ s.kind }}</td></tr>
+    {% endfor %}
+  </table></div>
+  <p class="muted noprint">{{ c.t.s("Numbers everyone can call. Feature codes work from your own phone or app only. Also available as the address book “Services” via CardDAV.") }}</p>
+</div>
+{% if has_phone %}
+<div class="card noprint" id="contacts">
+  <h2>{{ c.t.s("My contacts") }}</h2>
+  {% if contacts.is_empty() %}<p class="muted">{{ c.t.s("Only you can see your contacts.") }}</p>{% else %}
+  <div class="tablewrap"><table>
+    <tr><th>{{ c.t.s("Name") }}</th><th>{{ c.t.s("Company") }}</th><th>{{ c.t.s("Phone") }}</th><th>{{ c.t.s("Mobile") }}</th></tr>
+    {% for k in contacts %}
+    <tr><td><a href="/contacts/{{ k.id }}">{{ k.name }}</a></td><td>{{ k.org() }}</td>
+      <td>{% if let Some(n) = k.phone %}{% let num = n.clone() %}{% include "dial.html" %}{% endif %}</td>
+      <td>{% if let Some(n) = k.mobile %}{% let num = n.clone() %}{% include "dial.html" %}{% endif %}</td></tr>
+    {% endfor %}
+  </table></div>
+  <p class="muted">{{ c.t.s("Only you can see your contacts.") }}</p>{% endif %}
+  <p><a href="/contacts/new">+ {{ c.t.s("New contact") }}</a></p>
+</div>
+<div class="card noprint" id="carddav">
+  <h2>{{ c.t.s("Contacts on other devices (CardDAV)") }}</h2>
+  <p>{{ c.t.s("Sync the phone book and your contacts with the contacts app on your phone or computer (iPhone, Mac, DAVx⁵ on Android, Thunderbird). Contacts you add or change there show up here, and the other way round. Colleagues are read-only.") }}</p>
+  <table class="form">
+    <tr><th>{{ c.t.s("Server") }}</th><td><code>{{ dav_url }}</code></td></tr>
+    <tr><th>{{ c.t.s("Username") }}</th><td><code>{{ extension }}</code></td></tr>
+    <tr><th>{{ c.t.s("Password") }}</th><td>{{ c.t.s("an app password (create one below)") }}</td></tr>
+  </table>
+  {% if !tokens.is_empty() %}
+  <div class="tablewrap"><table>
+    <tr><th>{{ c.t.s("App password") }}</th><th>{{ c.t.s("Created") }}</th><th>{{ c.t.s("Last used") }}</th><th></th></tr>
+    {% for t in tokens %}
+    <tr><td>{{ t.label }}</td><td>{{ t.created }}</td>
+      <td>{% if let Some(l) = t.last_used %}{{ l }}{% else %}<span class="muted">{{ c.t.s("never") }}</span>{% endif %}</td>
+      <td><form class="inline" method="post" action="/me/carddav/{{ t.id }}/delete" data-confirm="{{ c.t.s("Revoke this app password?") }}"><button class="danger">{{ c.t.s("Revoke") }}</button></form></td></tr>
+    {% endfor %}
+  </table></div>
+  {% endif %}
+  <form method="post" action="/me/carddav" class="stack">
+    <label>{{ c.t.s("Name of the device or app") }} <input name="label" maxlength="60" required placeholder="iPhone"></label>
+    <button>{{ c.t.s("Create app password") }}</button>
+  </form>
+  <p class="muted">{{ c.t.s("Desk phones and Linphone provisioned by the phone system already have access and need no app password.") }}</p>
+  <details>
+    <summary>{{ c.t.s("FRITZ!Box: phone book on its DECT phones") }}</summary>
+    <p>{{ c.t.s("A FRITZ!Box can load a CardDAV address book as an online phone book; its DECT handsets then show the phone book and the names of callers.") }}</p>
+    <ol>
+      <li>{{ c.t.s("Best use a function account (e.g. “Lab phone”); an admin creates its app password on the person's admin page. Your own app password works too, but then the FRITZ!Box also shows your personal contacts.") }}</li>
+      <li>{{ c.t.s("FRITZ!Box: Telephony → Telephone Book → New Telephone Book → use contacts of an online provider → CardDAV provider (menu names vary by FRITZ!OS version).") }}</li>
+      <li>{{ c.t.s("Address") }}: <code>{{ dav_url }}book/</code> · {{ c.t.s("Username") }}: {{ c.t.s("the one shown with the app password (dav…)") }} · {{ c.t.s("Password") }}: {{ c.t.s("the app password") }}</li>
+      <li>{{ c.t.s("Assign the new phone book to the handsets (Telephony → Telephony Devices → handset → Telephone Book).") }}</li>
+    </ol>
+    <p class="muted">{{ c.t.s("“book” contains colleagues, services and the account's own contacts; it is read-only.") }}</p>
+  </details>
+</div>
+{% endif %}
+{% endblock %}

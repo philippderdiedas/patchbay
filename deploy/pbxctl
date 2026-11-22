@@ -1,0 +1,128 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Optional convenience tool on the PBX host (nothing depends on it; copy it anywhere, e.g.
+# /usr/local/bin). Talks to the containers of the Compose project `patchbay` (override with PBX_PROJECT) via docker exec. The web UI
+# covers all of it; the first admin of a new site: `patchbay-web set-password auto --create "<name>" --admin`.
+#
+#   pbxctl user-add <extension|auto> "<name>" [--function] [--email <mail>] [--mobile <+49…>]
+#   pbxctl user-list
+#   pbxctl login-set <extension|login> [--login <name>] [--admin]   (local login, asks for the password)
+#   pbxctl device-add <extension> "<label>" <linphone|dect|deskphone|generic> [--udp] [--admin]
+#   pbxctl device-list [<extension>]
+#   pbxctl device-enable|device-disable <device-number>
+#
+# Linphone provisioning (QR code / link) is in the web UI (patchbay-web prov.rs), not here.
+set -euo pipefail
+
+PG=(docker exec -i "${PBX_PROJECT:-patchbay}-postgres-1" psql -U pbx -d pbx -v ON_ERROR_STOP=1 -q)
+# </dev/null: docker exec -i would swallow stdin (login-set reads the password from it)
+REALM=$("${PG[@]}" -tA -c "SELECT value FROM settings WHERE key = 'sip_realm'" </dev/null)
+
+die() { echo "Error: $*" >&2; exit 1; }
+sql() { "${PG[@]}" -tA "$@"; }
+# Quote values for SQL
+q() { printf "'%s'" "${1//\'/\'\'}"; }
+# Internal numbers: 4 digits (1000–9999)
+num4() { [[ ${1:-} =~ ^[1-9][0-9]{3}$ ]] || die "$2: 4 digits (1000–9999)"; }
+# Next free number of a kind, allocated by patchbay-web itself (numbers.rs: range, strategy, cool-down)
+next_free() {
+    docker exec "${PBX_PROJECT:-patchbay}-patchbay-web-1" /usr/local/bin/patchbay-web next-number "$1" </dev/null
+}
+rnd_user() { openssl rand -hex 6; }
+rnd_pass() { openssl rand -base64 30 | tr -dc 'A-Za-z0-9' | cut -c1-24; }
+audit() {
+    local details=${3:-}; [ -n "$details" ] || details='{}'
+    sql -c "INSERT INTO audit_log (actor, action, object, details) VALUES ('admin-cli', $(q "$1"), $(q "$2"), $(q "$details")::jsonb)"
+}
+
+cmd=${1:-}; shift || true
+case "$cmd" in
+user-add)
+    ext=${1:?extension}; name=${2:?name}; shift 2
+    kind=person; email=NULL; mobile=NULL
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --function) kind=function ;;
+            --email) email=$(q "$2"); shift ;;
+            --mobile) mobile=$(q "$2"); shift ;;
+            *) die "unknown option $1" ;;
+        esac; shift
+    done
+    if [ "$ext" = auto ]; then ext=$(next_free person) || die "no free number left"; fi
+    num4 "$ext" "extension (or auto)"
+    sql -c "INSERT INTO users (kind, extension, display_name, email, mobile_e164)
+            VALUES ('$kind', $ext, $(q "$name"), $email, $mobile)"
+    audit user.add "user:$ext"
+    echo "User $ext ($name) created"
+    ;;
+user-list)
+    "${PG[@]}" -c "SELECT extension AS dw, kind, display_name, email, enabled, phone_allowed, dnd
+                   FROM users WHERE deleted_at IS NULL ORDER BY extension"
+    ;;
+login-set)
+    # Local login (PBX_AUTH=local|both): creates/updates the login, grants web access (--admin: admin)
+    [ -n "${1:-}" ] || die "usage: pbxctl login-set <extension|login> [--login <name>] [--admin]"
+    if [ -t 0 ]; then
+        read -rsp "New password: " pw1; echo >&2
+        read -rsp "Repeat: " pw2; echo >&2
+        [ "$pw1" = "$pw2" ] || die "passwords do not match"
+    else
+        IFS= read -r pw1 || true
+    fi
+    printf '%s\n' "$pw1" | docker exec -i "${PBX_PROJECT:-patchbay}-patchbay-web-1" /usr/local/bin/patchbay-web set-password "$@"
+    ;;
+device-add)
+    ext=${1:?extension}; label=${2:?label}; type=${3:?type}; shift 3
+    transport=tls; managed=self
+    [ "$type" = linphone ] || transport=udp
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --udp) transport=udp ;;
+            --admin) managed=admin ;;
+            *) die "unknown option $1" ;;
+        esac; shift
+    done
+    [ "$type" = linphone ] || managed=admin
+    num4 "$ext" extension
+    case "$type" in linphone|dect|deskphone|generic) ;; *) die "type: linphone, dect, deskphone or generic" ;; esac
+    uid=$(sql -c "SELECT id FROM users WHERE extension = $ext AND deleted_at IS NULL")
+    [ -n "$uid" ] || die "no person with extension $ext"
+    if [ "$(sql -c "SELECT COALESCE((SELECT enabled FROM number_policy WHERE kind = 'device'), true)")" = t ]; then
+        num=$(next_free device) || die "no free device number"
+        num4 "$num" "device number"
+    else
+        num=NULL   # PBX_NUMBERS_DEVICE=off
+    fi
+    user=$(rnd_user); pass=$(rnd_pass)
+    ha1=$(printf '%s:%s:%s' "$user" "$REALM" "$pass" | md5sum | cut -d' ' -f1)
+    # SRTP mandatory only over TLS (SDES keys travel in the SDP), see patchbay-web db.rs transport_srtp
+    srtp=$([ "$transport" = tls ] && echo required || echo off)
+    sql -c "INSERT INTO devices (user_id, number, label, type, managed_by, sip_username, ha1, transport, srtp)
+            VALUES ($uid, $num, $(q "$label"), '$type', '$managed', '$user', '$ha1', '$transport', '$srtp')"
+    audit device.add "device:$num" "{\"user\": $ext, \"type\": \"$type\"}"
+    cat <<EOF
+Device $num created ($label, $type, $transport)
+  SIP server:   $REALM  (port $([ $transport = tls ] && echo 5061/TLS || echo 5060/UDP))
+  Username:     $user
+  Password:     $pass      <- not stored
+EOF
+    ;;
+device-list)
+    where="d.deleted_at IS NULL"
+    if [ -n "${1:-}" ]; then num4 "$1" extension; where="$where AND u.extension = $1"; fi
+    "${PG[@]}" -c "SELECT d.number AS nr, u.extension AS dw, d.label, d.type, d.managed_by AS verwaltet,
+                          d.transport, d.enabled, d.sip_username
+                   FROM devices d JOIN users u ON u.id = d.user_id WHERE $where ORDER BY d.number"
+    ;;
+device-enable|device-disable)
+    num=${1:?device number}
+    num4 "$num" "device number"
+    val=$([ "$cmd" = device-enable ] && echo true || echo false)
+    n=$(sql -c "UPDATE devices SET enabled = $val WHERE number = $num AND deleted_at IS NULL RETURNING id")
+    [ -n "$n" ] || die "device $num not found"
+    audit "$cmd" "device:$num"
+    echo "Device $num: enabled=$val"
+    ;;
+*)
+    sed -n '2,12p' "$0"; exit 1 ;;
+esac

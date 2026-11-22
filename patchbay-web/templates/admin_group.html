@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}{{ c.t.s("Call group") }} {{ g.number }}{% endblock %}
+{% block content %}
+{% include "admin_nav.html" %}
+<form method="post" action="/admin/groups/{{ g.id }}" class="card">
+  <h2>{{ c.t.s("Call group") }} {{ g.number }} · {{ g.name }} <a href="/admin/flow/{{ g.number }}" class="noprint" style="font-size:15px">{{ c.t.s("Show call flow") }}</a></h2>
+  <table class="form">
+    <tr><th>{{ c.t.s("Number") }}</th><td><input name="number" type="number" min="1000" max="9999" value="{{ g.number }}" required class="short"></td></tr>
+    <tr><th>{{ c.t.s("Name") }}</th><td><input name="name" value="{{ g.name }}" required maxlength="40"></td></tr>
+    <tr><th>{{ c.t.s("Caller name prefix") }}</th><td><input name="caller_name_prefix" value="{{ g.caller_name_prefix }}" maxlength="8" class="short">
+      <span class="muted">{{ c.t.s("shown before the caller's name on the members' phones, e.g. “DSUP” for the German support line") }}</span></td></tr>
+    <tr><th>{{ c.t.s("Strategy") }}</th><td><select name="strategy">
+      <option value="ringall" {% if g.strategy == "ringall" %}selected{% endif %}>{{ c.t.s("ring all") }}</option>
+      <option value="linear" {% if g.strategy == "linear" %}selected{% endif %}>{{ c.t.s("one after another (by priority)") }}</option>
+      <option value="rrmemory" {% if g.strategy == "rrmemory" %}selected{% endif %}>{{ c.t.s("round robin (start rotates)") }}</option>
+    </select></td></tr>
+    <tr><th>{{ c.t.s("Queue") }}</th><td><label><input type="checkbox" name="queue" {% if g.queue %}checked{% endif %}> {{ c.t.s("Callers wait in line: only free members ring, the others wait") }}</label><br>
+      {{ c.t.s("Announce the position every") }} <input name="queue_announce_s" type="number" min="0" max="300" value="{{ g.queue_announce_s }}" class="short"> s
+      <span class="muted">{{ c.t.s("(0 = off, otherwise 15–300; “You are caller number 2”)") }}</span></td></tr>
+    <tr><th>{{ c.t.s("Time per member") }}</th><td><input name="member_timeout_s" type="number" min="5" max="120" value="{{ g.member_timeout_s }}" class="short"> s <span class="muted">{{ c.t.s("(for one after another / round robin)") }}</span></td></tr>
+    <tr><th>{{ c.t.s("Total time") }}</th><td><input name="total_timeout_s" type="number" min="5" max="600" value="{{ g.total_timeout_s }}" class="short"> s</td></tr>
+    <tr><th>{{ c.t.s("Language of announcements") }}</th><td><select name="language">
+      <option value="en" {% if g.language == "en" %}selected{% endif %}>{{ c.t.s("English") }}</option>
+      <option value="de" {% if g.language == "de" %}selected{% endif %}>{{ c.t.s("German") }}</option></select>
+      <span class="muted">{{ c.t.s("for the prompts of the group mailbox") }}</span></td></tr>
+    <tr><th>{{ c.t.s("Music on hold") }}</th><td><label><input type="checkbox" name="moh" {% if g.moh %}checked{% endif %}> {{ c.t.s("Caller hears music instead of ringback") }}</label>
+      <select name="moh_playlist">
+        <option value="">{{ c.t.s("Default hold music") }}</option>
+        {% for p in playlists %}<option value="{{ p.id }}" {% if g.moh_is(p.id) %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
+      </select></td></tr>
+    <tr><th>{{ c.t.s("Announcement first") }}</th><td><select name="announce"><option value="">{{ c.t.s("(none)") }}</option>
+      {% for s in opts.sounds %}<option value="{{ s.0 }}" {% if g.announce_is(s.0.as_str()) %}selected{% endif %}>{{ s.1 }}</option>{% endfor %}
+    </select> <span class="muted">{{ c.t.s("e.g. “You are being connected”") }}</span></td></tr>
+    <tr><th>{{ c.t.s("No answer") }}</th><td>{% let ts = noans.clone() %}{% include "target_select.html" %}</td></tr>
+  </table>
+  <p class="row"><button class="primary">{{ c.t.s("Save") }}</button></p>
+</form>
+<div class="card">
+  <h3>{{ c.t.s("Members") }}</h3>
+  <p class="muted">{{ c.t.s("The devices of members with ringing switched on will ring. Members on DND, logged out or without a device are skipped. Personal forwards do not apply to group calls. Members log in and out themselves on their start page.") }}</p>
+  <div class="tablewrap"><table>
+    <tr><th>{{ c.t.s("Priority") }}</th><th>{{ c.t.s("Ext.") }}</th><th>{{ c.t.s("Name") }}</th><th>{{ c.t.s("Status") }}</th><th></th></tr>
+    {% for m in members %}
+    <tr><td>{{ m.priority }}</td><td>{{ m.extension }}</td><td>{{ m.display_name }}{% if !m.enabled %} <span class="off">{{ c.t.s("(off)") }}</span>{% endif %}</td>
+      <td><form class="inline" method="post" action="/admin/groups/{{ g.id }}/members/{{ m.user_id }}/login">
+        {% if m.logged_in %}<span class="pill ok">{{ c.t.s("logged in") }}</span> <button>{{ c.t.s("Log out") }}</button>{% else %}<span class="pill warn">{{ c.t.s("logged out") }}</span> <input type="hidden" name="on" value="1"><button>{{ c.t.s("Log in") }}</button>{% endif %}
+      </form></td>
+      <td><form class="inline" method="post" action="/admin/groups/{{ g.id }}/members/{{ m.user_id }}/delete"><button class="danger">{{ c.t.s("Remove") }}</button></form></td></tr>
+    {% endfor %}
+  </table></div>
+  <form method="post" action="/admin/groups/{{ g.id }}/members" class="row" style="margin-top:12px">
+    <select name="extension">{% for o in opts.users %}<option value="{{ o.0 }}">{{ o.1 }}</option>{% endfor %}</select>
+    <input name="priority" type="number" min="0" max="99" value="0" class="short" title="{{ c.t.s("Priority") }}">
+    <button class="primary">{{ c.t.s("Add / set priority") }}</button>
+  </form>
+</div>
+<form method="post" action="/admin/groups/{{ g.id }}/delete" data-confirm="{{ c.t.s("Really delete?") }}">
+  <button class="danger">{{ c.t.s("Delete call group") }}</button>
+</form>
+{% endblock %}

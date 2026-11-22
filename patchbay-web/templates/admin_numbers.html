@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}{{ c.t.s("Numbers") }}{% endblock %}
+{% block content %}
+{% include "admin_nav.html" %}
+<div class="card">
+  <h2>{{ c.t.s("Own numbers") }}</h2>
+  <div class="tablewrap"><table>
+    <tr><th>{{ c.t.s("Number") }}</th><th>{{ c.t.s("Label") }}</th><th>{{ c.t.s("Trunk") }}</th><th>{{ c.t.s("Target") }}</th><th></th></tr>
+    {% for d in dids %}
+    <tr>
+      <td>{{ d.row.e164 }}</td><td>{{ d.row.label }}</td><td>{{ d.row.trunk }}</td>
+      <td>{% match d.row.target_desc %}{% when Some with (t) %}{{ c.tdesc(t) }}{% when None %}<span class="off">{{ c.t.s("no target") }}</span>{% endmatch %}</td>
+      <td class="nowrap"><a href="/admin/numbers/{{ d.row.id }}">{{ c.t.s("Edit") }}</a> · <a href="/admin/flow/did/{{ d.row.id }}">{{ c.t.s("Call flow") }}</a></td>
+    </tr>
+    {% endfor %}
+  </table></div>
+</div>
+<div class="card">
+  <h3>{{ c.t.s("Add number") }}</h3>
+  <form method="post" action="/admin/numbers" class="row">
+    <input name="e164" placeholder="+… (E.164)" required>
+    <select name="trunk_id">{% for t in trunks %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}</select>
+    <input name="label" placeholder="{{ c.t.s("Label") }}">
+    <button class="primary">{{ c.t.s("Add") }}</button>
+  </form>
+  <p class="muted">{{ c.t.s("The trunk itself (registration) is configured under Trunks.") }}</p>
+</div>
+{% endblock %}

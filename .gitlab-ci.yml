@@ -1,0 +1,55 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Pipeline: tests on every push/MR; images patchbay-web and patchbay-asterisk on the default branch
+# (tags <sha>, latest); a version tag (v1.2.3) publishes the already built images under that tag,
+# with PBX_BUILD set to it (shown in the web UI and the monitoring), instead of rebuilding Asterisk.
+# Components: https://git.fablab-luebeck.de/it/infra/ci-templates
+include:
+  - component: $CI_SERVER_FQDN/it/infra/ci-templates/workflow@1
+  - component: $CI_SERVER_FQDN/it/infra/ci-templates/version-info@1
+  - component: $CI_SERVER_FQDN/it/infra/ci-templates/kaniko@1
+    inputs:
+      job_name: build-web
+      image: $CI_REGISTRY_IMAGE/patchbay-web
+      dockerfile: $CI_PROJECT_DIR/patchbay-web/Dockerfile
+      build_args: --build-arg PBX_VERSION=$GIT_DESCRIBE
+      needs: [version-info, test]
+      rules:
+        - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  - component: $CI_SERVER_FQDN/it/infra/ci-templates/kaniko@1
+    inputs:
+      job_name: build-asterisk
+      image: $CI_REGISTRY_IMAGE/patchbay-asterisk
+      context: $CI_PROJECT_DIR/asterisk
+      dockerfile: $CI_PROJECT_DIR/asterisk/Dockerfile
+      build_args: --build-arg PBX_VERSION=$GIT_DESCRIBE
+      needs: [version-info]
+      rules:
+        - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  - component: $CI_SERVER_FQDN/it/infra/ci-templates/image-release@1
+    inputs:
+      job_name: release-web
+      image: $CI_REGISTRY_IMAGE/patchbay-web
+      env: PBX_BUILD=$CI_COMMIT_TAG
+  - component: $CI_SERVER_FQDN/it/infra/ci-templates/image-release@1
+    inputs:
+      job_name: release-asterisk
+      image: $CI_REGISTRY_IMAGE/patchbay-asterisk
+      env: PBX_BUILD=$CI_COMMIT_TAG
+
+stages: [test, build]
+
+test:
+  stage: test
+  image: rust:1-trixie
+  interruptible: true
+  variables:
+    CARGO_HOME: $CI_PROJECT_DIR/.cargo
+  cache:
+    key: cargo-$CI_COMMIT_REF_SLUG
+    paths: [.cargo/registry, patchbay-web/target, patchbay-notify/target]
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+  script:
+    - cd patchbay-notify && cargo test
+    - cd ../patchbay-web && cargo test --locked

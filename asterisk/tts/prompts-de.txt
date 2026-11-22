@@ -1,0 +1,93 @@
+# Prompts generated with Piper TTS (voice Thorsten, CC0) when the Asterisk image is built.
+# name|text – played as pbx-tts/<name> (language de). Speaking clock: app kind "clock".
+clock-intro|Beim nächsten Ton ist es
+clock-h-0|null Uhr,
+clock-h-1|ein Uhr,
+clock-h-2|zwei Uhr,
+clock-h-3|drei Uhr,
+clock-h-4|vier Uhr,
+clock-h-5|fünf Uhr,
+clock-h-6|sechs Uhr,
+clock-h-7|sieben Uhr,
+clock-h-8|acht Uhr,
+clock-h-9|neun Uhr,
+clock-h-10|zehn Uhr,
+clock-h-11|elf Uhr,
+clock-h-12|zwölf Uhr,
+clock-h-13|dreizehn Uhr,
+clock-h-14|vierzehn Uhr,
+clock-h-15|fünfzehn Uhr,
+clock-h-16|sechzehn Uhr,
+clock-h-17|siebzehn Uhr,
+clock-h-18|achtzehn Uhr,
+clock-h-19|neunzehn Uhr,
+clock-h-20|zwanzig Uhr,
+clock-h-21|einundzwanzig Uhr,
+clock-h-22|zweiundzwanzig Uhr,
+clock-h-23|dreiundzwanzig Uhr,
+clock-m-0|null Minuten
+clock-m-1|eine Minute
+clock-m-2|zwei Minuten
+clock-m-3|drei Minuten
+clock-m-4|vier Minuten
+clock-m-5|fünf Minuten
+clock-m-6|sechs Minuten
+clock-m-7|sieben Minuten
+clock-m-8|acht Minuten
+clock-m-9|neun Minuten
+clock-m-10|zehn Minuten
+clock-m-11|elf Minuten
+clock-m-12|zwölf Minuten
+clock-m-13|dreizehn Minuten
+clock-m-14|vierzehn Minuten
+clock-m-15|fünfzehn Minuten
+clock-m-16|sechzehn Minuten
+clock-m-17|siebzehn Minuten
+clock-m-18|achtzehn Minuten
+clock-m-19|neunzehn Minuten
+clock-m-20|zwanzig Minuten
+clock-m-21|einundzwanzig Minuten
+clock-m-22|zweiundzwanzig Minuten
+clock-m-23|dreiundzwanzig Minuten
+clock-m-24|vierundzwanzig Minuten
+clock-m-25|fünfundzwanzig Minuten
+clock-m-26|sechsundzwanzig Minuten
+clock-m-27|siebenundzwanzig Minuten
+clock-m-28|achtundzwanzig Minuten
+clock-m-29|neunundzwanzig Minuten
+clock-m-30|dreißig Minuten
+clock-m-31|einunddreißig Minuten
+clock-m-32|zweiunddreißig Minuten
+clock-m-33|dreiunddreißig Minuten
+clock-m-34|vierunddreißig Minuten
+clock-m-35|fünfunddreißig Minuten
+clock-m-36|sechsunddreißig Minuten
+clock-m-37|siebenunddreißig Minuten
+clock-m-38|achtunddreißig Minuten
+clock-m-39|neununddreißig Minuten
+clock-m-40|vierzig Minuten
+clock-m-41|einundvierzig Minuten
+clock-m-42|zweiundvierzig Minuten
+clock-m-43|dreiundvierzig Minuten
+clock-m-44|vierundvierzig Minuten
+clock-m-45|fünfundvierzig Minuten
+clock-m-46|sechsundvierzig Minuten
+clock-m-47|siebenundvierzig Minuten
+clock-m-48|achtundvierzig Minuten
+clock-m-49|neunundvierzig Minuten
+clock-m-50|fünfzig Minuten
+clock-m-51|einundfünfzig Minuten
+clock-m-52|zweiundfünfzig Minuten
+clock-m-53|dreiundfünfzig Minuten
+clock-m-54|vierundfünfzig Minuten
+clock-m-55|fünfundfünfzig Minuten
+clock-m-56|sechsundfünfzig Minuten
+clock-m-57|siebenundfünfzig Minuten
+clock-m-58|achtundfünfzig Minuten
+clock-m-59|neunundfünfzig Minuten
+clock-s-0|und null Sekunden.
+clock-s-10|und zehn Sekunden.
+clock-s-20|und zwanzig Sekunden.
+clock-s-30|und dreißig Sekunden.
+clock-s-40|und vierzig Sekunden.
+clock-s-50|und fünfzig Sekunden.

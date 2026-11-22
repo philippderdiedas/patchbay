@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}{{ c.t.s("Voicemail") }}{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="row" style="justify-content:space-between"><h2>{{ c.t.s("Voicemail") }}</h2>
+  {% if any_unheard %}<form method="post" action="/voicemail/heard-all"><button>{{ c.t.s("Mark all as heard") }}</button></form>{% endif %}</div>
+  {% if messages.is_empty() %}<p class="muted">{{ c.t.s("No messages.") }}</p>{% else %}
+  <div class="tablewrap"><table>
+    <tr><th>{{ c.t.s("Time") }}</th><th>{{ c.t.s("Caller") }}</th><th>{{ c.t.s("Mailbox") }}</th><th>{{ c.t.s("Duration") }}</th><th>{{ c.t.s("Listen") }}</th><th></th></tr>
+    {% for m in messages %}
+    <tr>
+      <td>{% if !m.heard %}<b>{{ m.received }}</b> <span class="new">●</span>{% else %}{{ m.received }}{% endif %}</td>
+      <td>{% match m.caller_e164 %}{% when Some with (n) %}{% match m.caller_name %}{% when Some with (nm) %}{{ nm }} · {% when None %}{% endmatch %}{% let num = n.to_string() %}{% include "dial.html" %}{% when None %}{{ m.caller() }}{% endmatch %}</td><td>{{ m.mailbox }}</td><td>{{ m.duration_s.unwrap_or(0) }} s</td>
+      <td><audio controls preload="none" src="/voicemail/{{ m.id }}/audio"></audio></td>
+      <td class="row">
+        <form class="inline" method="post" action="/voicemail/{{ m.id }}">
+          {% if m.heard %}<input type="hidden" name="action" value="unheard"><button>{{ c.t.s("Mark as new") }}</button>
+          {% else %}<input type="hidden" name="action" value="heard"><button>{{ c.t.s("Mark as heard") }}</button>{% endif %}
+        </form>
+        <form class="inline" method="post" action="/voicemail/{{ m.id }}" data-confirm="{{ c.t.s("Really delete?") }}">
+          <input type="hidden" name="action" value="delete"><button class="danger">{{ c.t.s("Delete") }}</button></form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table></div>{% endif %}
+  <p class="muted">{{ c.t.s("Messages are deleted automatically after 90 days. Call group messages are visible to all members.") }}</p>
+  {% if c.chat_bot() %}<p><a href="/me/chat">{{ c.t.s("Voicemails by e-mail or in the chat") }}</a></p>{% endif %}
+</div>
+{% if has_phone %}
+<div class="card" id="greeting">
+  <h3>{{ c.t.s("Your greeting") }}</h3>
+  {% match greeting %}{% when Some with (g) %}
+  <p class="row"><span>{{ c.t.s("Own greeting") }} ({{ "{:.0}"|format(g.1) }} s)</span>
+    <audio controls preload="none" src="/voicemail/greeting/audio?v={{ g.0 }}"></audio></p>
+  <form method="post" action="/voicemail/greeting/delete" data-confirm="{{ c.t.s("Use the standard greeting again?") }}">
+    <button class="danger">{{ c.t.s("Remove, use standard greeting") }}</button></form>
+  {% when None %}
+  <p class="muted">{{ c.t.s("Callers currently hear the standard greeting (“Please leave a message after the tone”).") }}</p>
+  {% endmatch %}
+  <h4>{{ c.t.s("Record in the browser") }}</h4>
+  <div class="row" data-recorder data-max="{{ max_greeting }}">
+    <button type="button" class="primary" data-rec-start>{{ c.t.s("Start recording") }}</button>
+    <button type="button" data-rec-stop hidden>{{ c.t.s("Stop") }}</button>
+    <span data-rec-time class="muted"></span>
+    <audio controls data-rec-preview hidden></audio>
+    <button type="button" class="primary" data-rec-save hidden>{{ c.t.s("Use this recording") }}</button>
+  </div>
+  <h4>{{ c.t.s("Or upload a file") }}</h4>
+  <form method="post" action="/voicemail/greeting" enctype="multipart/form-data" class="row">
+    <input type="file" name="file" accept="audio/*" required>
+    <button class="primary">{{ c.t.s("Upload") }}</button>
+  </form>
+  <p class="muted">{{ c.t.s("MP3, WAV, OGG, M4A … at most") }} {{ max_greeting }} s. {{ c.t.s("The tone is added automatically after your greeting.") }}</p>
+</div>
+{% endif %}
+{% endblock %}

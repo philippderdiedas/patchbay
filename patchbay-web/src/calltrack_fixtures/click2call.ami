@@ -1,0 +1,52 @@
+# Click-to-call by 1020 to 1010: 1020's device rings first (that answer does not count), then
+# the call to 1010 is answered (hand-written).
+#t 0
+Event: Newchannel
+Channel: Local/1020@group-member-00000030;1
+CallerIDNum: 1010
+CallerIDName: → 1010
+Uniqueid: 4.1
+Linkedid: 4.1
+
+Event: Newchannel
+Channel: Local/1020@group-member-00000030;2
+Uniqueid: 4.2
+Linkedid: 4.1
+
+Event: DialBegin
+Linkedid: 4.1
+DestChannel: PJSIP/dev1020-00000031
+
+#t 3
+Event: DialEnd
+Linkedid: 4.1
+DestChannel: PJSIP/dev1020-00000031
+DialStatus: ANSWER
+
+Event: UserEvent
+UserEvent: PbxTarget
+Kind: user
+Number: 1010
+Fwd: 0
+Dnd: 0
+CallerIDNum: 1020
+CallerIDName: Ada
+Uniqueid: 4.1
+Linkedid: 4.1
+
+Event: DialBegin
+Linkedid: 4.1
+DestChannel: PJSIP/dev1010a-00000032
+
+#t 5
+Event: DialEnd
+Linkedid: 4.1
+DestChannel: PJSIP/dev1010a-00000032
+DialStatus: ANSWER
+
+#t 65
+Event: Hangup
+Uniqueid: 4.1
+
+Event: Hangup
+Uniqueid: 4.2

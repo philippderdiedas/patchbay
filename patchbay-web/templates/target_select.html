@@ -1,0 +1,21 @@
+{# Target selector: kind dropdown plus one value input per kind (app.js shows the matching one). #}
+<span class="row" data-target>
+  <select name="{{ ts.prefix }}kind" data-kind>
+    <option value="none" {% if ts.kind.is_empty() || ts.is("none") %}selected{% endif %}>{{ c.t.s(ts.none_label) }}</option>
+    {% if ts.offers("user") %}<option value="user" {% if ts.is("user") %}selected{% endif %}>{{ c.t.s("Person") }}</option>{% endif %}
+    {% if ts.offers("group") %}<option value="group" {% if ts.is("group") %}selected{% endif %}>{{ c.t.s("Call group") }}</option>{% endif %}
+    {% if ts.offers("mailbox_user") %}<option value="mailbox_user" {% if ts.is("mailbox_user") %}selected{% endif %}>{{ c.t.s("Voicemail (person)") }}</option>{% endif %}
+    {% if ts.offers("mailbox_group") %}<option value="mailbox_group" {% if ts.is("mailbox_group") %}selected{% endif %}>{{ c.t.s("Voicemail (call group)") }}</option>{% endif %}
+    {% if ts.offers("ivr") %}<option value="ivr" {% if ts.is("ivr") %}selected{% endif %}>{{ c.t.s("IVR") }}</option>{% endif %}
+    {% if ts.offers("app") %}<option value="app" {% if ts.is("app") %}selected{% endif %}>{{ c.t.s("App") }}</option>{% endif %}
+    {% if ts.offers("announcement") %}<option value="announcement" {% if ts.is("announcement") %}selected{% endif %}>{{ c.t.s("Announcement") }}</option>{% endif %}
+    {% if ts.offers("external") %}<option value="external" {% if ts.is("external") %}selected{% endif %}>{{ c.t.s("External number") }}</option>{% endif %}
+    {% if ts.offers("hangup") %}<option value="hangup" {% if ts.is("hangup") %}selected{% endif %}>{{ c.t.s("hang up") }}</option>{% endif %}
+  </select>
+  <select name="{{ ts.prefix }}value" data-for="user mailbox_user">{% for o in opts.users %}<option value="{{ o.0 }}" {% if ts.value_is("user", o.0.as_str()) || ts.value_is("mailbox_user", o.0.as_str()) %}selected{% endif %}>{{ o.1 }}</option>{% endfor %}</select>
+  <select name="{{ ts.prefix }}value" data-for="group mailbox_group">{% for o in opts.groups %}<option value="{{ o.0 }}" {% if ts.value_is("group", o.0.as_str()) || ts.value_is("mailbox_group", o.0.as_str()) %}selected{% endif %}>{{ o.1 }}</option>{% endfor %}</select>
+  <select name="{{ ts.prefix }}value" data-for="ivr">{% for o in opts.ivrs %}<option value="{{ o.0 }}" {% if ts.value_is("ivr", o.0.as_str()) %}selected{% endif %}>{{ o.1 }}</option>{% endfor %}</select>
+  <select name="{{ ts.prefix }}value" data-for="announcement">{% for o in opts.sounds %}<option value="{{ o.0 }}" {% if ts.value_is("announcement", o.0.as_str()) %}selected{% endif %}>{{ o.1 }}</option>{% endfor %}</select>
+  <select name="{{ ts.prefix }}value" data-for="app">{% for o in opts.apps %}<option value="{{ o.0 }}" {% if ts.value_is("app", o.0.as_str()) %}selected{% endif %}>{{ o.1 }}</option>{% endfor %}</select>
+  <input name="{{ ts.prefix }}value" data-for="external" value="{% if ts.is("external") %}{{ ts.value }}{% endif %}" placeholder="{{ c.t.s("e.g. 0176…") }}" style="width:170px">
+</span>

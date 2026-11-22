@@ -1,0 +1,53 @@
+# Group 5110 rings the devices of 1010 and 1015, nobody answers, the no-answer target is the
+# group mailbox (hand-written, reduced to the fields the tracker reads).
+#t 0
+Event: Newchannel
+Channel: PJSIP/provider-054-00000010
+CallerIDNum: +4940123456
+CallerIDName: +4940123456
+Uniqueid: 2.1
+Linkedid: 2.1
+
+Event: UserEvent
+UserEvent: PbxTarget
+Kind: group
+Number: 5110
+Did: +494012345054
+CallerIDNum: +4940123456
+Uniqueid: 2.1
+Linkedid: 2.1
+
+Event: DialBegin
+Linkedid: 2.1
+DestChannel: Local/1010@group-member-00000010;1
+
+Event: DialBegin
+Linkedid: 2.1
+DestChannel: PJSIP/dev1010a-00000011
+
+Event: DialBegin
+Linkedid: 2.1
+DestChannel: PJSIP/dev1015-00000012
+
+Event: DialBegin
+Linkedid: 2.1
+DestChannel: PJSIP/dev1010a-00000011
+
+#t 30
+Event: DialEnd
+Linkedid: 2.1
+DestChannel: PJSIP/dev1010a-00000011
+DialStatus: NOANSWER
+
+Event: UserEvent
+UserEvent: PbxVoicemail
+Owner: group
+Number: 5110
+VmId: vm123
+Uniqueid: 2.1
+Linkedid: 2.1
+
+#t 60
+Event: Hangup
+Uniqueid: 2.1
+Linkedid: 2.1

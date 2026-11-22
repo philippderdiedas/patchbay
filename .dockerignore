@@ -1,0 +1,14 @@
+# Build context of patchbay-web/Dockerfile is the repository root; only the Rust crates and the
+# migrations (embedded by patchbay-web/build.rs) are needed.
+*
+!patchbay-web/Cargo.toml
+!patchbay-web/Cargo.lock
+!patchbay-web/askama.toml
+!patchbay-web/build.rs
+!patchbay-web/bin
+!db/migrations
+!patchbay-web/src
+!patchbay-web/templates
+!patchbay-web/static
+!patchbay-notify/Cargo.toml
+!patchbay-notify/src

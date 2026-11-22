@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}{{ c.t.s("Call flow") }} {{ title }}{% endblock %}
+{% block content %}
+{% include "admin_nav.html" %}
+<div class="card">
+  <h2>{{ c.t.s("Call flow") }}: {{ title }} <a href="{{ back }}" class="noprint" style="font-size:15px">{{ c.t.s("back") }}</a></h2>
+  <p class="muted noprint">{{ c.t.s("What happens to a call, step by step. Notes with a coloured bar show the state right now (who is logged out, which opening hours apply); the rest is the configuration. Print it with your browser (Ctrl+P).") }}</p>
+  <div class="flow">{{ flow|safe }}</div>
+  {% if recall_s > 0 %}<p class="muted fn-foot">{{ c.t.s("Transferred calls: if the person or group a call was transferred to does not answer, the phone of the person who transferred it rings once more before the steps above continue.") }}</p>{% endif %}
+</div>
+{% endblock %}

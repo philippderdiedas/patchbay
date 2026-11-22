@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}{{ p.name }}{% endblock %}
+{% block content %}
+{% include "admin_nav.html" %}
+<form method="post" action="/admin/times/{{ p.id }}" class="card">
+  <h2>{{ p.name }} ·
+    {% if p.state == "open" %}<span class="ok">{{ c.t.s("open") }}</span>{% else if p.state == "holiday" %}<span class="warn">{{ c.t.s("holiday") }}</span>{% else %}<span class="off">{{ c.t.s("closed") }}</span>{% endif %}</h2>
+  <table class="form">
+    <tr><th>{{ c.t.s("Name") }}</th><td><input name="name" value="{{ p.name }}" required maxlength="40"></td></tr>
+    <tr><th>{{ c.t.s("Public holidays") }}</th><td><select name="holiday_region">
+      <option value="site" {% if p.holiday_region == "site" %}selected{% endif %}>{{ c.t.s("from the holiday calendar") }}</option>
+      <option value="none" {% if p.holiday_region != "site" %}selected{% endif %}>{{ c.t.s("none") }}</option></select></td></tr>
+  </table>
+  <p><button class="primary">{{ c.t.s("Save") }}</button> <span class="muted">{{ c.t.s("Time zone") }}: {{ timezone }}</span></p>
+</form>
+<div class="card">
+  <h3>{{ c.t.s("Opening hours") }}</h3>
+  <table>
+    <tr><th>{{ c.t.s("Days") }}</th><th>{{ c.t.s("From") }}</th><th>{{ c.t.s("To") }}</th><th></th></tr>
+    {% for r in rules %}
+    <tr><td>{% for d in r.days() %}{{ c.t.s(d) }} {% endfor %}</td><td>{{ r.from() }}</td><td>{{ r.to() }}</td>
+      <td><form class="inline" method="post" action="/admin/times/{{ p.id }}/rules/{{ r.id }}/delete"><button class="danger">{{ c.t.s("Remove") }}</button></form></td></tr>
+    {% endfor %}
+  </table>
+  {% if rules.is_empty() %}<p class="muted">{{ c.t.s("No opening hours: the profile is always closed.") }}</p>{% endif %}
+  <form method="post" action="/admin/times/{{ p.id }}/rules" class="row" style="margin-top:12px">
+    {% for d in days %}<label><input type="checkbox" name="days" value="{{ loop.index0 }}" {% if loop.index0 < 5 %}checked{% endif %}> {{ c.t.s(d) }}</label>{% endfor %}
+    <input name="from" type="time" value="08:00" required> – <input name="to" type="time" value="17:00" required>
+    <button class="primary">{{ c.t.s("Add") }}</button>
+  </form>
+</div>
+<div class="card">
+  <h3>{{ c.t.s("Own closing days") }}</h3>
+  <table>
+    {% for d in closures %}<tr><td>{{ d.date_str() }}</td><td>{{ d.name }}</td>
+      <td><form class="inline" method="post" action="/admin/times/{{ p.id }}/closures/{{ d.iso() }}/delete"><button class="danger">{{ c.t.s("Remove") }}</button></form></td></tr>{% endfor %}
+  </table>
+  <form method="post" action="/admin/times/{{ p.id }}/closures" class="row" style="margin-top:12px">
+    <input name="date" type="date" required> – <input name="to" type="date" title="{{ c.t.s("optional, for a range") }}">
+    <input name="name" placeholder="{{ c.t.s("e.g. Christmas Eve, closing days") }}" maxlength="60">
+    <button class="primary">{{ c.t.s("Add") }}</button>
+  </form>
+</div>
+<div class="card">
+  <h3>{{ c.t.s("Public holidays (next 12 months)") }} · <a href="/admin/holidays">{{ c.t.s("Holiday calendar") }}</a></h3>
+  <table>{% for d in holidays %}<tr><td>{{ d.date_str() }}</td><td>{{ d.name }}</td></tr>{% endfor %}</table>
+  {% if holidays.is_empty() %}<p class="muted">–</p>{% endif %}
+</div>
+<form method="post" action="/admin/times/{{ p.id }}/delete" data-confirm="{{ c.t.s("Really delete?") }}"><button class="danger">{{ c.t.s("Delete time profile") }}</button></form>
+{% endblock %}

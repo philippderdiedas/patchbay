@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}{{ user.display_name }}{% endblock %}
+{% block content %}
+{% include "admin_nav.html" %}
+<div class="card">
+  <h2>{{ user.extension }} · {{ user.display_name }} <a href="/admin/users/{{ user.id }}/edit" style="font-size:15px">{{ c.t.s("edit") }}</a> <a href="/admin/flow/{{ user.extension }}" class="noprint" style="font-size:15px">{{ c.t.s("Show call flow") }}</a></h2>
+  <p class="muted">{{ c.t.s(user.kind.as_str()) }}{% match user.email %}{% when Some with (e) %} · {{ e }}{% when None %}{% endmatch %}
+  {% if auth.oidc || user.kc_subject.is_some() %}· {% if auth.kc_sync %}{{ c.t.s("Keycloak") }}{% else %}{{ c.t.s("Single sign-on") }}{% endif %}: {% if user.kc_subject.is_some() %}{{ c.t.s("linked") }}{% else %}{{ c.t.s("not linked") }}{% endif %}{% endif %}
+  {% if auth.local || user.local_login.is_some() %}· {{ c.t.s("Local login") }}: {% match user.local_login %}{% when Some with (l) %}<code>{{ l }}</code>{% when None %}{{ c.t.s("none") }}{% endmatch %}{% endif %}
+  · {{ c.t.s("Phone allowed") }}: {% if user.phone_allowed %}{{ c.t.s("yes") }}{% else %}{{ c.t.s("no") }}{% endif %}
+  · {{ c.t.s("Phone book") }}: {% if user.in_phonebook %}{{ c.t.s("listed") }}{% else %}{{ c.t.s("hidden") }}{% endif %}</p>
+  {% if user.kind == "person" %}{% if user.kc_subject.is_some() %}
+  <form class="inline" method="post" action="/admin/users/{{ user.id }}/unlink" data-confirm="{{ c.t.s("Unlink the Keycloak account?") }}"><button>{% if auth.kc_sync %}{{ c.t.s("Unlink Keycloak account") }}{% else %}{{ c.t.s("Unlink single sign-on account") }}{% endif %}</button></form>
+  {% else if auth.oidc %}
+  <form method="post" action="/admin/users/{{ user.id }}/link" class="row">
+    {% if auth.kc_sync %}
+    <input name="keycloak" required placeholder="{{ c.t.s("Keycloak username or e-mail") }}">
+    <button class="primary">{{ c.t.s("Link Keycloak account") }}</button>
+    {% else %}
+    <input name="keycloak" required maxlength="255" placeholder="{{ c.t.s("OIDC subject (sub)") }}">
+    <button class="primary">{{ c.t.s("Link single sign-on account") }}</button>
+    <span class="muted">{{ c.t.s("The person sees the subject on the start page after the first single sign-on login.") }}</span>
+    {% endif %}
+    {% if !auth.local %}<span class="muted">{{ c.t.s("Until then the person cannot use the phone pages.") }}</span>{% endif %}
+  </form>
+  {% endif %}{% endif %}
+  {% if auth.local %}<p><a href="/admin/users/{{ user.id }}/edit#login">{% if user.local_login.is_some() %}{{ c.t.s("Change local login or password") }}{% else %}{{ c.t.s("Create local login") }}{% endif %}</a></p>{% endif %}
+  <div class="tablewrap"><table data-regpoll="/devices/status?user={{ user.id }}">
+    <tr><th>{{ c.t.s("No.") }}</th><th>{{ c.t.s("Label") }}</th><th>{{ c.t.s("Type") }}</th><th>{{ c.t.s("Managed") }}</th><th>{{ c.t.s("Transport") }}</th><th>{{ c.t.s("SIP user") }}</th><th>{{ c.t.s("Status") }}</th><th></th></tr>
+    {% for d in devices %}
+    <tr>
+      <td>{{ d.num() }}</td><td>{{ d.label }}</td><td>{{ d.type }}</td><td>{{ d.managed_by }}</td><td>{% if d.type == "linphone" %}{{ d.transport }} · SRTP{% else %}
+        <form class="inline row" method="post" action="/admin/users/{{ user.id }}/devices/{{ d.id }}">
+          <input type="hidden" name="action" value="transport">
+          {% let tsel_t = d.transport.as_str() %}{% let tsel_s = d.srtp.as_str() %}{% include "transport_select.html" %}
+          <button>{{ c.t.s("Set") }}</button></form>{% endif %}</td>
+      <td><code>{{ d.sip_username }}</code></td>
+      <td data-reg="{{ d.id }}">{% if !d.enabled %}<span class="off">{{ c.t.s("locked") }}</span>{% else %}{% let st = d.reg_state() %}<span class="reg reg-{{ st }}">{% if st == "online" %}{{ c.t.s("registered") }}{% else if st == "unreachable" %}{{ c.t.s("not reachable") }}{% else %}{{ c.t.s("not registered") }}{% endif %}</span>{% let det = d.reg_detail() %}{% if !det.is_empty() %}<br><small class="muted">{{ det }}</small>{% endif %}{% endif %}</td>
+      <td class="row">
+        {% if d.enabled %}<button type="button" data-ringtest="{{ d.id }}">{{ c.t.s("Ring test") }}</button>{% endif %}
+        <form class="inline" method="post" action="/admin/users/{{ user.id }}/devices/{{ d.id }}">
+          {% if d.enabled %}<input type="hidden" name="action" value="disable"><button>{{ c.t.s("Lock") }}</button>
+          {% else %}<input type="hidden" name="action" value="enable"><button>{{ c.t.s("Unlock") }}</button>{% endif %}
+        </form>
+        <form class="inline" method="post" action="/admin/users/{{ user.id }}/devices/{{ d.id }}" data-confirm="{{ c.t.s("Really delete?") }}">
+          <input type="hidden" name="action" value="delete"><button class="danger">{{ c.t.s("Delete") }}</button></form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table></div>
+</div>
+<div class="card">
+  <h3>{{ c.t.s("Create device (managed by admin)") }}</h3>
+  <form method="post" action="/admin/users/{{ user.id }}/devices" class="row">
+    <input name="label" placeholder="{{ c.t.s("e.g. Gigaset handset") }}" required maxlength="40">
+    <select name="type">
+      <option value="generic">{{ c.t.s("SIP device (manual setup)") }}</option>
+      <option value="linphone">Linphone</option>
+      <option value="fixed">{{ c.t.s("SIP device with a fixed address (no registration)") }}</option>
+    </select>
+    <input name="contact" data-show-when="type=fixed" placeholder="sip:42@10.0.0.5:5070" maxlength="120" aria-label="{{ c.t.s("Fixed address") }}">
+    {% let tsel_t = "tls" %}{% let tsel_s = "optional" %}{% include "transport_select.html" %}
+    <button class="primary">{{ c.t.s("Create") }}</button>
+  </form>
+  <p class="muted">{{ c.t.s("SIP device: credentials are shown once and entered on the device (e.g. a DECT base). Linphone: QR code.") }}
+  {{ c.t.s("Fixed address: for devices that only wait for calls, e.g. Home Assistant (VoIP integration); the PBX calls the address directly.") }}
+  {{ c.t.s("UDP and TCP are only accepted from the allowed internal networks; TLS from all internal networks including VPN.") }}</p>
+</div>
+<div class="card">
+  <h3>{{ c.t.s("App password for contacts (CardDAV)") }}</h3>
+  <p class="muted">{{ c.t.s("For a FRITZ!Box online phone book or a contacts app, e.g. of a function account without a login. Shown once.") }}</p>
+  <form method="post" action="/admin/users/{{ user.id }}/carddav" class="row">
+    <input name="label" maxlength="60" required placeholder="{{ c.t.s("e.g. FRITZ!Box") }}" aria-label="{{ c.t.s("Name of the device or app") }}">
+    <button>{{ c.t.s("Create app password") }}</button>
+  </form>
+  <h3>{{ c.t.s("Delete user") }}</h3>
+  <p class="muted">{{ c.t.s("Removes the user with all devices, personal apps, group memberships, contacts, app passwords and voicemails. The extension becomes free. Call records stay. Not possible while the user is a call target somewhere (numbers, IVRs, groups, forwardings).") }}</p>
+  <form method="post" action="/admin/users/{{ user.id }}/delete" data-confirm="{{ c.t.s("Really delete this user?") }}"><button class="danger">{{ c.t.s("Delete user") }}</button></form>
+</div>
+{% endblock %}

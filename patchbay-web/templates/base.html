@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="{{ c.lang }}" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+<link rel="icon" href="/static/icon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/static/icon-180.png">
+<title>{% block title %}{{ c.t.s("Phone system") }}{% endblock %} · {{ c.site_title }}</title>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("pbx-theme")||"auto"}catch(e){}</script>
+<link rel="stylesheet" href="/static/base.css">
+<link rel="stylesheet" href="/static/theme.css">
+<script src="/static/app.js" defer></script>
+</head>
+<body data-msg-filter="{{ c.t.s("Filter…") }}"
+      data-msg-call-ringing="{{ c.t.s("Your phone is ringing – pick up to start the call.") }}"
+      data-msg-call-failed="{{ c.t.s("The call could not be started.") }}"
+      data-msg-ringtest="{{ c.t.s("The device is ringing.") }}"
+      data-msg-not-registered="{{ c.t.s("The device is not registered.") }}"
+      data-msg-rec-unsupported="{{ c.t.s("Recording is not supported by this browser.") }}"
+      data-msg-rec-nomic="{{ c.t.s("No access to the microphone.") }}"
+      data-msg-rec-again="{{ c.t.s("Record again") }}"
+      data-msg-save-failed="{{ c.t.s("Saving failed.") }}"
+      data-msg-reg-online="{{ c.t.s("registered") }}"
+      data-msg-reg-unreachable="{{ c.t.s("not reachable") }}"
+      data-msg-reg-offline="{{ c.t.s("not registered") }}"
+      data-msg-presence-available="{{ c.t.s("available") }}"
+      data-msg-presence-busy="{{ c.t.s("on the phone") }}"
+      data-msg-presence-ringing="{{ c.t.s("ringing") }}"
+      data-msg-presence-dnd="{{ c.t.s("do not disturb") }}"
+      data-msg-presence-offline="{{ c.t.s("offline") }}">
+<nav class="nav">
+  <a class="brand" href="/"><img class="brand-logo" src="/static/logo.svg" alt="" width="24" height="24"> {{ c.site_title }}</a>
+  {% if !c.name.is_empty() %}<a href="/" {% if c.is_nav("home") %}aria-current="page"{% endif %}>{{ c.t.s("My phone") }}</a>
+  <a href="/calls" {% if c.is_nav("calls") %}aria-current="page"{% endif %}>{{ c.t.s("Calls") }}</a>
+  {% let hdr_unheard = c.unheard() %}<a href="/voicemail" {% if c.is_nav("voicemail") %}aria-current="page"{% endif %}>{{ c.t.s("Voicemail") }}{% if hdr_unheard > 0 %} <span class="badge" title="{{ c.t.s("New voicemails") }}: {{ hdr_unheard }}">{{ hdr_unheard }}<span class="vh"> {{ c.t.s("new") }}</span></span>{% endif %}</a>
+  <a href="/phonebook" {% if c.is_nav("phonebook") %}aria-current="page"{% endif %}>{{ c.t.s("Phone book") }}</a>
+  <a href="/help" {% if c.is_nav("help") %}aria-current="page"{% endif %}>{{ c.t.s("Help") }}</a>{% endif %}
+  {% if c.is_admin %}<a href="/admin" {% if c.is_nav("admin") %}aria-current="page"{% endif %}>{{ c.t.s("Admin") }}</a>{% endif %}
+  {% let hdr_fwd = c.forward_to() %}{% if !hdr_fwd.is_empty() %}<a class="chip" href="/#forwarding" title="{{ c.t.s("Forwarding active") }} → {{ hdr_fwd }}"><span class="icon i-phone-fwd"></span> {{ c.t.s("Forwarded") }}</a>{% endif %}
+  {% if c.has_phone() %}<a class="chip" data-dnd-chip href="/#dnd" title="{{ c.t.s("Do not disturb is on") }}" {% if !c.dnd_on() %}hidden{% endif %}><span class="icon i-bell-off"></span> {{ c.t.s("DND") }}</a>{% endif %}
+  <span class="spacer"></span>
+  <span class="seg" role="group" aria-label="{{ c.t.s("Theme") }}">
+    <button type="button" data-theme-set="auto">{{ c.t.s("Auto") }}</button><button type="button" data-theme-set="light">{{ c.t.s("Light") }}</button><button type="button" data-theme-set="dark">{{ c.t.s("Dark") }}</button>
+  </span>
+  <span class="seg" role="group" aria-label="{{ c.t.s("Language") }}">
+    <a href="/lang/en" {% if c.lang == "en" %}class="active"{% endif %}>EN</a><a href="/lang/de" {% if c.lang == "de" %}class="active"{% endif %}>DE</a>
+  </span>
+  {% if !c.name.is_empty() %}<span class="user">{{ c.name }}</span>
+  <form class="inline" method="post" action="/auth/logout"><button>{{ c.t.s("Log out") }}</button></form>{% endif %}
+</nav>
+<main>{% block content %}{% endblock %}</main>
+{% if c.is_admin %}<footer class="build muted">patchbay {{ c.version }}</footer>{% endif %}
+{% if c.has_phone() %}<aside id="companion" class="cmp" data-t="{{ c.companion_i18n() }}" aria-live="polite" hidden>
+  <button type="button" class="cmp-fab" aria-expanded="false" aria-controls="cmp-panel"><span class="icon i-phone"></span><span class="cmp-badge" hidden></span><span class="vh">{{ c.t.s("Calls") }}</span></button>
+  <div class="cmp-panel" id="cmp-panel" hidden>
+    <div class="cmp-head"><strong>{{ c.t.s("Calls") }}</strong><button type="button" class="cmp-close" aria-label="{{ c.t.s("Close") }}">×</button></div>
+    <form class="cmp-dial" autocomplete="off">
+      <div class="cmp-numrow">
+        <input name="to" list="cmp-dl" inputmode="tel" placeholder="{{ c.t.s("Number, extension or name") }}" aria-label="{{ c.t.s("Number, extension or name") }}" maxlength="40" required>
+        <button type="button" class="cmp-bookbtn" title="{{ c.t.s("Phone book") }}" aria-label="{{ c.t.s("Phone book") }}"><span class="icon i-book"></span></button>
+      </div>
+      <datalist id="cmp-dl"></datalist>
+      <div class="cmp-callrow">
+        <select name="device" aria-label="{{ c.t.s("Call from") }}"><option value="all">{{ c.t.s("All my devices") }}</option></select>
+        <button class="primary">{{ c.t.s("Call") }}</button>
+      </div>
+    </form>
+    <div class="cmp-calls"></div>
+    <div class="cmp-offers"></div>
+    <div class="cmp-toggles"></div>
+  </div>
+</aside>
+<dialog class="cmp-book" aria-label="{{ c.t.s("Phone book") }}">
+  <div class="cmp-book-head"><strong>{{ c.t.s("Phone book") }}</strong><button type="button" class="cmp-close" data-close aria-label="{{ c.t.s("Close") }}">×</button></div>
+  <input type="search" placeholder="{{ c.t.s("Search") }}…" aria-label="{{ c.t.s("Search") }}">
+  <ul class="cmp-book-list"></ul>
+</dialog>{% endif %}
+</body>
+</html>

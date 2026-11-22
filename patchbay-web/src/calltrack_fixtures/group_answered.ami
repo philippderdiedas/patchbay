@@ -1,0 +1,151 @@
+# Inbound trunk call to a DID, group 5110 (ringall; member 1010 with two devices, member 1015),
+# answered on 1010's first device. Hand-written in the shape of the recorded sequences.
+#t 100
+Event: Newchannel
+Channel: PJSIP/provider-054-00000001
+CallerIDNum: 040123456
+CallerIDName: <unknown>
+Uniqueid: 1700.1
+Linkedid: 1700.1
+
+Event: UserEvent
+UserEvent: PbxTarget
+Kind: group
+Number: 5110
+Did: +494012345054
+Channel: PJSIP/provider-054-00000001
+CallerIDNum: +4940123456
+CallerIDName: Kunde GmbH
+Uniqueid: 1700.1
+Linkedid: 1700.1
+
+Event: Newchannel
+Channel: Local/1010@group-member-00000001;1
+Uniqueid: 1700.2
+Linkedid: 1700.1
+
+Event: Newchannel
+Channel: Local/1010@group-member-00000001;2
+Uniqueid: 1700.3
+Linkedid: 1700.1
+
+Event: Newchannel
+Channel: Local/1015@group-member-00000002;1
+Uniqueid: 1700.4
+Linkedid: 1700.1
+
+Event: Newchannel
+Channel: Local/1015@group-member-00000002;2
+Uniqueid: 1700.5
+Linkedid: 1700.1
+
+Event: DialBegin
+Channel: PJSIP/provider-054-00000001
+Linkedid: 1700.1
+DestChannel: Local/1010@group-member-00000001;1
+DestLinkedid: 1700.1
+
+Event: DialBegin
+Channel: PJSIP/provider-054-00000001
+Linkedid: 1700.1
+DestChannel: Local/1015@group-member-00000002;1
+DestLinkedid: 1700.1
+
+Event: Newchannel
+Channel: PJSIP/dev1010a-00000002
+Uniqueid: 1700.6
+Linkedid: 1700.1
+
+Event: Newchannel
+Channel: PJSIP/dev1010b-00000003
+Uniqueid: 1700.7
+Linkedid: 1700.1
+
+Event: DialBegin
+Channel: Local/1010@group-member-00000001;2
+Linkedid: 1700.1
+DestChannel: PJSIP/dev1010a-00000002
+DestLinkedid: 1700.1
+
+Event: DialBegin
+Channel: Local/1010@group-member-00000001;2
+Linkedid: 1700.1
+DestChannel: PJSIP/dev1010b-00000003
+DestLinkedid: 1700.1
+
+Event: Newchannel
+Channel: PJSIP/dev1015-00000004
+Uniqueid: 1700.8
+Linkedid: 1700.1
+
+Event: DialBegin
+Channel: Local/1015@group-member-00000002;2
+Linkedid: 1700.1
+DestChannel: PJSIP/dev1015-00000004
+DestLinkedid: 1700.1
+
+#t 110
+Event: DialEnd
+Channel: Local/1010@group-member-00000001;2
+Linkedid: 1700.1
+DestChannel: PJSIP/dev1010a-00000002
+DialStatus: ANSWER
+
+Event: DialEnd
+Channel: Local/1010@group-member-00000001;2
+Linkedid: 1700.1
+DestChannel: PJSIP/dev1010b-00000003
+DialStatus: CANCEL
+
+Event: Hangup
+Channel: PJSIP/dev1010b-00000003
+Uniqueid: 1700.7
+Linkedid: 1700.1
+
+Event: DialEnd
+Channel: PJSIP/provider-054-00000001
+Linkedid: 1700.1
+DestChannel: Local/1010@group-member-00000001;1
+DialStatus: ANSWER
+
+Event: DialEnd
+Channel: PJSIP/provider-054-00000001
+Linkedid: 1700.1
+DestChannel: Local/1015@group-member-00000002;1
+DialStatus: CANCEL
+
+Event: Hangup
+Channel: PJSIP/dev1015-00000004
+Uniqueid: 1700.8
+Linkedid: 1700.1
+
+Event: Hangup
+Channel: Local/1015@group-member-00000002;2
+Uniqueid: 1700.5
+Linkedid: 1700.1
+
+Event: Hangup
+Channel: Local/1015@group-member-00000002;1
+Uniqueid: 1700.4
+Linkedid: 1700.1
+
+#t 140
+Event: Hangup
+Channel: PJSIP/provider-054-00000001
+Uniqueid: 1700.1
+Linkedid: 1700.1
+
+Event: Hangup
+Channel: Local/1010@group-member-00000001;1
+Uniqueid: 1700.2
+Linkedid: 1700.1
+
+Event: Hangup
+Channel: Local/1010@group-member-00000001;2
+Uniqueid: 1700.3
+Linkedid: 1700.1
+
+Event: Hangup
+Channel: PJSIP/dev1010a-00000002
+Uniqueid: 1700.6
+Linkedid: 1700.1

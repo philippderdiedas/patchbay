@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}{{ c.t.s("IVR") }}{% endblock %}
+{% block content %}
+{% include "admin_nav.html" %}
+<div class="card">
+  <h2>{{ c.t.s("Voice menus (IVR)") }}</h2>
+  <div class="tablewrap"><table>
+    <tr><th>{{ c.t.s("ID") }}</th><th>{{ c.t.s("Number") }}</th><th>{{ c.t.s("Name") }}</th><th>{{ c.t.s("Greeting") }}</th><th>{{ c.t.s("Keys") }}</th><th>{{ c.t.s("No input") }}</th></tr>
+    {% for i in ivrs %}
+    <tr><td>{{ i.id }}</td><td>{% match i.number %}{% when Some with (n) %}{% let num = n.to_string() %}{% include "dial.html" %}{% when None %}<span class="muted">–</span>{% endmatch %}</td><td><a href="/admin/ivrs/{{ i.id }}">{{ i.name }}</a></td>
+      <td>{{ i.greeting_name.clone().unwrap_or_default() }}</td><td>{{ i.options }}</td>
+      <td>{% match i.timeout_desc %}{% when Some with (d) %}{{ c.tdesc(d) }}{% when None %}<span class="muted">{{ c.t.s("hang up") }}</span>{% endmatch %}</td></tr>
+    {% endfor %}
+  </table></div>
+</div>
+<div class="card">
+  <h3>{{ c.t.s("Create IVR") }}</h3>
+  <form method="post" action="/admin/ivrs" class="row">
+    <input name="name" placeholder="{{ c.t.s("e.g. Main menu") }}" required maxlength="40">
+    <button class="primary">{{ c.t.s("Create") }}</button>
+  </form>
+</div>
+{% endblock %}

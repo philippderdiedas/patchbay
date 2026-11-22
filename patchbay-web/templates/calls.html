@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}{{ c.t.s("My calls") }}{% endblock %}
+{% block content %}
+<div class="card">
+  <h2>{{ c.t.s("My calls") }}</h2>
+  {% if calls.is_empty() %}<p class="muted">{{ c.t.s("No calls yet.") }}</p>{% else %}
+  <div class="tablewrap"><table class="stacked">
+    <tr><th>{{ c.t.s("Time") }}</th><th></th><th>{{ c.t.s("Number") }}</th><th>{{ c.t.s("Name") }}</th><th>{{ c.t.s("Duration") }}</th></tr>
+    {% for k in calls %}
+    <tr>
+      <td class="nowrap">{{ k.at }}</td>
+      <td class="nowrap">{% if k.direction == "out" %}<span class="muted">↗ {{ c.t.s("outgoing") }}</span>{% else if k.answered %}<span class="ok">↙ {{ c.t.s("incoming") }}</span>{% else %}<span class="warn">↙ {{ c.t.s("missed") }}</span>{% endif %}</td>
+      <td data-label="{{ c.t.s("Number") }}">{% if k.number.is_empty() %}<span class="muted">{{ c.t.s("unknown") }}</span>{% else %}{% let num = k.number.clone() %}{% include "dial.html" %}{% endif %}</td>
+      <td data-label="{{ c.t.s("Name") }}">{{ k.display_name() }}</td>
+      <td data-label="{{ c.t.s("Duration") }}">{{ k.duration() }}</td>
+    </tr>
+    {% endfor %}
+  </table></div>{% endif %}
+  <p class="muted">{{ c.t.s("Calls of your devices in the last 90 days.") }} <a href="/calls.csv" download>{{ c.t.s("Export as CSV") }}</a></p>
+</div>
+{% endblock %}

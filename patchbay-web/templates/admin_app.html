@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}{{ c.t.s("Custom apps") }}{% endblock %}
+{% block content %}
+{% include "admin_nav.html" %}
+<form method="post" action="/admin/apps/{% if is_new %}new{% else %}{{ a.id }}{% endif %}" class="card">
+  <h2>{% if is_new %}{{ c.t.s("New custom app") }}{% else %}{{ a.name }}{% endif %}</h2>
+  {% if !errors.is_empty() %}<div class="off">{% for e in errors %}<p>{{ e }}</p>{% endfor %}</div>{% endif %}
+  {% if !guard %}<p class="warn">{{ c.t.s("Guard rails are off at this site.") }}</p>{% endif %}
+  <table class="form">
+    <tr><th>{{ c.t.s("Number") }}</th><td><input name="number" type="number" min="1000" max="9999" value="{% if a.number > 0 %}{{ a.number }}{% endif %}" required class="short"></td></tr>
+    <tr><th>{{ c.t.s("Name") }}</th><td><input name="name" value="{{ a.name }}" required maxlength="60"></td></tr>
+    <tr><th>{{ c.t.s("Active") }}</th><td><label><input type="checkbox" name="enabled" {% if a.enabled %}checked{% endif %}> {{ c.t.s("active") }}</label></td></tr>
+    <tr><th>{{ c.t.s("Dialplan template") }}</th><td>
+      <textarea name="template" rows="14" spellcheck="false" class="mono" style="width:100%">{{ a.template }}</textarea>
+      <p class="muted">{{ c.t.s("Start with “exten => s,1,…”. Data: users[\"1021\"], groups[\"5120\"], ivrs[\"Name\"], sounds[\"Name\"].file, site.realm. Dial out only via Gosub(sub-outbound,s,1(number)).") }}</p>
+    </td></tr>
+  </table>
+  <p class="row">
+    <button name="action" value="preview">{{ c.t.s("Preview") }}</button>
+    <button class="primary" name="action" value="save">{{ c.t.s("Save & activate") }}</button>
+    <a href="/admin/apps">{{ c.t.s("Cancel") }}</a></p>
+  {% match preview %}{% when Some with (p) %}
+  <h3>{{ c.t.s("Rendered dialplan") }}</h3>
+  <pre class="mono" style="overflow-x:auto;background:var(--surface-2);padding:12px;border-radius:var(--radius-sm)">{{ p }}</pre>
+  {% when None %}{% endmatch %}
+</form>
+{% if !is_new %}
+<form method="post" action="/admin/apps/{{ a.id }}/delete" data-confirm="{{ c.t.s("Really delete?") }}"><button class="danger">{{ c.t.s("Delete") }}</button></form>
+{% endif %}
+{% endblock %}

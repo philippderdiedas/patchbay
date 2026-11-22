@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}{{ c.t.s("Set up device") }}{% endblock %}
+{% block content %}
+<div class="card">
+  <h2>{{ c.t.s("Set up device") }} {{ device.num() }} · {{ device.label }}</h2>
+  <div data-provwatch="{{ device.id }}">
+    <div data-before-fetch>
+      <p>{{ c.t.s("In Linphone: assistant → <b>Scan QR code</b>. The code is valid for <b>15 minutes</b> and only <b>once</b>.")|safe }}</p>
+      <div class="qr">{{ qr|safe }}</div>
+      <p class="muted">{{ c.t.s("Or “Fetch remote configuration”:") }} <code>{{ url }}</code></p>
+      <p class="muted">{{ c.t.s("Waiting for the device …") }}</p>
+    </div>
+    <p class="status-ok ok" data-fetched hidden><span class="icon i-check"></span> {{ c.t.s("Configuration fetched by the device.") }}</p>
+    <p class="status-ok ok" data-registered hidden><span class="icon i-check"></span> {{ c.t.s("Device registered – ready to use.") }}</p>
+  </div>
+  <p><a href="{{ back }}">{{ c.t.s("Done") }}</a></p>
+</div>
+{% endblock %}

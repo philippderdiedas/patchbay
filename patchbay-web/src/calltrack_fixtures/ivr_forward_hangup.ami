@@ -1,0 +1,56 @@
+# DID, IVR 1, key pressed, person 1010 with an immediate forward to group 5110; the caller hangs
+# up while the group rings (hand-written).
+#t 0
+Event: Newchannel
+Channel: PJSIP/provider-054-00000020
+CallerIDNum: 040999
+Uniqueid: 3.1
+Linkedid: 3.1
+
+Event: UserEvent
+UserEvent: PbxTarget
+Kind: ivr
+Number: 1
+Did: +494012345053
+CallerIDNum: +4940999
+Uniqueid: 3.1
+Linkedid: 3.1
+
+#t 10
+Event: UserEvent
+UserEvent: PbxTarget
+Kind: user
+Number: 1010
+Did: +494012345053
+Fwd: 17
+Dnd: 0
+CallerIDNum: +4940999
+Uniqueid: 3.1
+Linkedid: 3.1
+
+Event: UserEvent
+UserEvent: PbxTarget
+Kind: group
+Number: 5110
+Did: +494012345053
+CallerIDNum: +4940999
+Uniqueid: 3.1
+Linkedid: 3.1
+
+Event: Newchannel
+Channel: Local/1015@group-member-00000020;1
+Uniqueid: 3.2
+Linkedid: 3.1
+
+Event: DialBegin
+Linkedid: 3.1
+DestChannel: Local/1015@group-member-00000020;1
+
+#t 25
+Event: Hangup
+Uniqueid: 3.1
+Linkedid: 3.1
+
+Event: Hangup
+Uniqueid: 3.2
+Linkedid: 3.1

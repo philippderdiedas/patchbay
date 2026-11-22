@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}{{ c.t.s("Call groups") }}{% endblock %}
+{% block content %}
+{% include "admin_nav.html" %}
+<div class="card">
+  <h2>{{ c.t.s("Call groups") }}</h2>
+  <div class="tablewrap"><table>
+    <tr><th>{{ c.t.s("No.") }}</th><th>{{ c.t.s("Name") }}</th><th>{{ c.t.s("Strategy") }}</th><th>{{ c.t.s("Members") }}</th><th>{{ c.t.s("Times") }}</th><th>{{ c.t.s("No answer") }}</th></tr>
+    {% for g in groups %}
+    <tr><td><a href="/admin/groups/{{ g.id }}">{{ g.number }}</a></td><td><a href="/admin/groups/{{ g.id }}">{{ g.name }}</a></td>
+      <td>{{ c.t.s(g.strategy_label()) }}</td><td>{{ g.members }}</td><td>{{ g.member_timeout_s }} s / {{ g.total_timeout_s }} s</td>
+      <td>{% match g.noans_desc %}{% when Some with (d) %}{{ c.tdesc(d) }}{% when None %}<span class="muted">{{ c.t.s("“Not available” announcement") }}</span>{% endmatch %}</td></tr>
+    {% endfor %}
+  </table></div>
+  {% if groups.is_empty() %}<p class="muted">{{ c.t.s("No call groups yet.") }}</p>{% endif %}
+</div>
+<div class="card">
+  <h3>{{ c.t.s("Create call group") }}</h3>
+  <form method="post" action="/admin/groups" class="row">
+    <input name="number" type="number" min="1000" max="9999" placeholder="{{ c.t.s("auto") }}" class="short" title="{{ c.t.s("Number (empty: next free)") }}">
+    <input name="name" placeholder="{{ c.t.s("e.g. Sales") }}" required maxlength="40">
+    <select name="strategy"><option value="ringall">{{ c.t.s("ring all") }}</option><option value="linear">{{ c.t.s("one after another") }}</option><option value="rrmemory">{{ c.t.s("round robin") }}</option></select>
+    <input name="member_timeout_s" type="number" min="5" max="120" value="20" class="short" title="{{ c.t.s("Time per member") }}">
+    <input name="total_timeout_s" type="number" min="5" max="600" value="90" class="short" title="{{ c.t.s("Total time") }}">
+    <label><input type="checkbox" name="moh" checked> {{ c.t.s("Music on hold") }}</label>
+    <button class="primary">{{ c.t.s("Create") }}</button>
+  </form>
+</div>
+{% endblock %}

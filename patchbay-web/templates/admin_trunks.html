@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}{{ c.t.s("Trunks") }}{% endblock %}
+{% block content %}
+{% include "admin_nav.html" %}
+<div class="card">
+  <h2>{{ c.t.s("Trunks") }}</h2>
+  <p class="muted">{{ c.t.s("Trunks are pure connections. They only carry calls through dial rules (outbound) and inbound rules.") }}</p>
+  <div class="tablewrap"><table>
+    <tr><th>{{ c.t.s("Name") }}</th><th>{{ c.t.s("Type") }}</th><th>{{ c.t.s("Prefix") }}</th><th>{{ c.t.s("Host") }}</th><th>{{ c.t.s("Status") }}</th><th>{{ c.t.s("Permissions") }}</th></tr>
+    {% for v in trunks %}
+    <tr><td><a href="/admin/trunks/{{ v.t.id }}">{{ v.t.name }}</a>{% if !v.t.managed %} <span class="muted">{{ c.t.s("(static)") }}</span>{% endif %}</td>
+      <td>{{ c.t.s(v.t.kind_label()) }}</td><td>{{ v.t.prefix_str() }}</td><td>{{ v.t.host_str() }}</td>
+      <td>{% if v.t.login_missing() %}<span class="warn">{{ c.t.s("No login at the peer – not configured") }}</span>{% else if v.status.starts_with("OK") || v.status == "Registered" %}<span class="ok">{{ c.t.s(v.status.as_str()) }}</span>{% else %}<span class="warn">{{ c.t.s(v.status.as_str()) }}</span>{% endif %}</td>
+      <td class="muted">{% for cl in v.t.route_classes %}<code>{{ cl }}</code> {% endfor %}</td></tr>
+    {% endfor %}
+  </table></div>
+  <p class="row"><a href="/admin/trunks/new">+ {{ c.t.s("New IAX peer") }}</a> <a href="/admin/trunks/new?kind=sip">+ {{ c.t.s("New SIP trunk") }}</a></p>
+</div>
+{% endblock %}

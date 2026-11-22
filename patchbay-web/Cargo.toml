@@ -1,0 +1,40 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[package]
+name = "patchbay-web"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+anyhow = "1"
+askama = "0.12"
+axum = { version = "0.8", features = ["form", "query", "multipart"] }
+axum-extra = { version = "0.10", features = ["cookie-private", "form"] }
+axum-server = { version = "0.7", features = ["tls-rustls"] }
+base64 = "0.22"
+hex = "0.4"
+md-5 = "0.10"
+openidconnect = { version = "4", features = ["reqwest", "rustls-tls"], default-features = false }
+qrcode = "0.14"
+minijinja = "2"
+aes-gcm = "0.10"
+cookie = { version = "0.18", features = ["private", "key-expansion"] }
+lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1"] }
+rand = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_urlencoded = "0.7"
+sha2 = "0.10"
+hmac = "0.12"
+percent-encoding = "2"
+sqlx = { version = "0.8", default-features = false, features = ["postgres", "runtime-tokio", "tls-rustls", "chrono", "macros"] }
+chrono = { version = "0.4", features = ["serde"] }
+time = "0.3"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+argon2 = { version = "0.5", features = ["std"] }
+rhai = { version = "1.19", features = ["serde", "sync"] }
+patchbay-notify = { path = "../patchbay-notify" }

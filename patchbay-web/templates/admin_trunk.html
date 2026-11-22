@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}{{ c.t.s("Trunks") }}{% endblock %}
+{% block content %}
+{% include "admin_nav.html" %}
+<form method="post" action="/admin/trunks/{% if is_new %}new{% else %}{{ t.id }}{% endif %}" class="card">
+  <h2>{% if is_new %}{% if t.is_sip() %}{{ c.t.s("New SIP trunk") }}{% else %}{{ c.t.s("New IAX peer") }}{% endif %}{% else %}{{ t.name }} <span class="muted">({{ t.kind }})</span>{% endif %}</h2>
+  {% if t.managed && t.is_sip() %}
+  <table class="form">
+    <tr><th>{{ c.t.s("Name") }}</th><td><input name="name" value="{{ t.name }}" required maxlength="60" placeholder="{{ c.t.s("e.g. Eventphone") }}"></td></tr>
+    <tr><th>{{ c.t.s("Type") }}</th><td><select name="kind">
+      <option value="sip_register" {% if t.kind == "sip_register" %}selected{% endif %}>{{ c.t.s("Registration (username and password)") }}</option>
+      <option value="sip_ip" {% if t.kind == "sip_ip" %}selected{% endif %}>{{ c.t.s("IP-based (provider identified by address)") }}</option></select></td></tr>
+    <tr><th>{{ c.t.s("Server") }}</th><td class="row"><input name="host" value="{{ t.host_str() }}" required placeholder="sip.provider.example">
+      : <input name="port" type="number" min="1" max="65535" value="{% if let Some(p) = t.port %}{{ p }}{% endif %}" class="short" placeholder="5060">
+      <select name="sip_transport"><option value="udp">UDP</option><option value="tcp" {% if t.sip_transport == "tcp" %}selected{% endif %}>TCP</option><option value="tls" {% if t.sip_transport == "tls" %}selected{% endif %}>TLS</option></select></td></tr>
+    <tr data-show-when="kind=sip_register"><th>{{ c.t.s("Username") }}</th><td><input name="username" value="{{ t.username_str() }}" autocomplete="off"></td></tr>
+    <tr data-show-when="kind=sip_register"><th>{{ c.t.s("Password") }}</th><td><input name="secret" type="password" autocomplete="new-password"
+        placeholder="{% if t.has_secret %}{{ c.t.s("set – leave empty to keep") }}{% endif %}"></td></tr>
+    <tr><th>{{ c.t.s("Inbound calls") }}</th><td><select name="inbound_mode">
+      <option value="did" {% if t.inbound_mode == "did" %}selected{% endif %}>{{ c.t.s("Own numbers (routing under Numbers)") }}</option>
+      <option value="passthrough" {% if t.inbound_mode == "passthrough" %}selected{% endif %}>{{ c.t.s("Extensions (inbound rules below, like IAX)") }}</option></select></td></tr>
+    <tr><th>{{ c.t.s("Codecs") }}</th><td class="row">{% for cd in codecs %}<label><input type="checkbox" name="codecs" value="{{ cd }}" {% if t.has_codec(cd) %}checked{% endif %}> {{ cd }}</label>{% endfor %}</td></tr>
+    <tr><th>{{ c.t.s("Options") }}</th><td>
+      <label style="display:block"><input type="checkbox" name="enabled" {% if t.enabled %}checked{% endif %}> {{ c.t.s("active") }}</label>
+      <label style="display:block"><input type="checkbox" name="media_encryption" value="sdes" {% if t.media_encryption == "sdes" %}checked{% endif %}> {{ c.t.s("SRTP (only with TLS)") }}</label></td></tr>
+    <tr><th>{{ c.t.s("Max. calls") }}</th><td><input name="max_channels" type="number" min="1" max="100" value="{{ t.max_str() }}" class="short"></td></tr>
+    <tr><th>{{ c.t.s("Advanced") }}</th><td><details{% if !t.from_user_str().is_empty() || !t.from_domain_str().is_empty() || !t.proxy_str().is_empty() || !t.identify_str().is_empty() %} open{% endif %}>
+      <summary>{{ c.t.s("From header, proxy, sources") }}</summary>
+      <div class="stack">
+      <label>{{ c.t.s("From user") }} <input name="from_user" value="{{ t.from_user_str() }}" placeholder="{{ c.t.s("default: username") }}"></label>
+      <label>{{ c.t.s("From domain") }} <input name="from_domain" value="{{ t.from_domain_str() }}" placeholder="{{ c.t.s("default: server") }}"></label>
+      <label>{{ c.t.s("Outbound proxy") }} <input name="outbound_proxy" value="{{ t.proxy_str() }}" placeholder="proxy.provider.example"></label>
+      <label>{{ c.t.s("Additional sources") }} <input name="identify_match" value="{{ t.identify_str() }}" placeholder="203.0.113.0/24, sip2.provider.example"></label>
+      <span class="muted">{{ c.t.s("Addresses the provider calls from, besides server and proxy.") }}</span>
+      </div></details></td></tr>
+  {% else if t.managed %}
+  {% if !is_new && t.login_missing() %}<p class="warn">{{ c.t.s("This IAX peer has no login at the peer and is therefore not configured in Asterisk. Enter “Our login at the peer” and save.") }}</p>{% endif %}
+  <table class="form">
+    <tr><th>{{ c.t.s("Name") }}</th><td><input name="name" value="{{ t.name }}" required maxlength="60" placeholder="{{ c.t.s("e.g. Home office Ada") }}"></td></tr>
+    <tr><th>{{ c.t.s("Site prefix of the peer") }}</th><td><input name="site_prefix" value="{{ t.prefix_str() }}" required pattern="[1-9][0-9]{1,3}" class="short">
+      <span class="muted">{{ c.t.s("how our users dial the peer, e.g. 78 → 781020") }}</span></td></tr>
+    <tr><th>{{ c.t.s("Our login at the peer") }}</th><td><input name="iax_username" value="{{ t.iax_user_str() }}" required pattern="[A-Za-z0-9_\-]{1,40}" maxlength="40" class="short">
+      <span class="muted">{{ c.t.s("the name the peer has given this PBX (its trunk name for us)") }}</span></td></tr>
+    <tr><th>{{ c.t.s("Host") }}</th><td class="row"><input name="host" value="{{ t.host_str() }}" required placeholder="10.206.8.2"> :
+      <input name="port" type="number" value="{{ t.port.unwrap_or(4569) }}" class="short"></td></tr>
+    <tr><th>{{ c.t.s("Shared secret") }}</th><td><input name="secret" type="password" autocomplete="new-password" minlength="16"
+        placeholder="{% if t.has_secret %}{{ c.t.s("set – leave empty to keep") }}{% else %}{{ c.t.s("at least 16 characters, same on both sides") }}{% endif %}">
+      <span class="muted">{{ c.t.s("The peer logs in here as") }} <code>site{% if t.prefix_str().is_empty() %}&lt;prefix&gt;{% else %}{{ t.prefix_str() }}{% endif %}</code>. {{ c.t.s("Caller IDs go out as plain extensions; the peer puts its prefix for us in front.") }}</span></td></tr>
+    <tr><th>{{ c.t.s("Options") }}</th><td>
+      <label style="display:block"><input type="checkbox" name="enabled" {% if t.enabled %}checked{% endif %}> {{ c.t.s("active") }}</label>
+      <label style="display:block"><input type="checkbox" name="encryption" {% if t.encryption %}checked{% endif %}> {{ c.t.s("Encryption (AES, enforced)") }}</label>
+      <label style="display:block"><input type="checkbox" name="iax_trunk" {% if t.iax_trunk %}checked{% endif %}> {{ c.t.s("IAX trunk mode (only useful with many simultaneous calls)") }}</label>
+      <label>{{ c.t.s("Call token") }} <select name="calltoken"><option value="yes" {% if t.calltoken == "yes" %}selected{% endif %}>{{ c.t.s("required") }}</option>
+        <option value="auto" {% if t.calltoken == "auto" %}selected{% endif %}>auto ({{ c.t.s("for old peers") }})</option></select></label>
+    </td></tr>
+    <tr><th>{{ c.t.s("Max. calls") }}</th><td><input name="max_channels" type="number" min="1" max="100" value="{{ t.max_str() }}" class="short"></td></tr>
+  {% else %}
+  <p class="muted">{{ c.t.s("Static trunk (site configuration). Only permissions and the call limit can be changed here.") }}</p>
+  <table class="form">
+    <tr><th>{{ c.t.s("Max. calls") }}</th><td><input name="max_channels" type="number" min="1" max="100" value="{{ t.max_str() }}" class="short"></td></tr>
+  {% endif %}
+    <tr><th>{{ c.t.s("Permissions") }}</th><td>
+      {% for cl in classes %}<label style="display:block"><input type="checkbox" name="classes" value="{{ cl.0 }}" {% if t.has_class(cl.0) %}checked{% endif %}> {{ cl.1 }} <code class="muted">{{ cl.0 }}</code></label>{% endfor %}
+      <span class="muted">{{ c.t.s("Calls arriving via this trunk may only use dial rules of these classes (transit, breakout, emergency).") }}</span></td></tr>
+  </table>
+  <p class="row"><button class="primary">{{ c.t.s("Save") }}</button>
+    {% if !is_new %}<button type="button" data-trunktest="{{ t.id }}">{{ c.t.s("Test connection") }}</button>{% endif %}
+    <a href="/admin/trunks">{{ c.t.s("Cancel") }}</a></p>
+</form>
+{% if !is_new && t.is_sip() && t.managed %}
+<div class="card">
+  <h3>{{ c.t.s("Dial rules") }}</h3>
+  {% if dial_rules.is_empty() %}<p class="muted">{{ c.t.s("No dial rule uses this trunk yet.") }} <a href="/admin/routes/new">{{ c.t.s("Create dial rule") }}</a></p>
+  {% else %}<table>{% for r in dial_rules %}<tr><td><a href="/admin/routes/{{ r.0 }}">{{ r.1 }}</a></td><td><code>{{ r.2 }}</code></td><td><code>{{ r.3 }}</code></td></tr>{% endfor %}</table>{% endif %}
+  {% if t.inbound_mode == "did" %}<p class="muted">{{ c.t.s("Inbound: assign the trunk's numbers under") }} <a href="/admin/numbers">{{ c.t.s("Numbers") }}</a>.</p>{% endif %}
+</div>
+{% endif %}
+{% if !is_new && (t.kind == "iax2" || (t.managed && t.inbound_mode == "passthrough")) %}
+{% if t.kind == "iax2" %}
+<div class="card">
+  <h3>{{ c.t.s("Dial rules") }}</h3>
+  {% if dial_rules.is_empty() %}
+  <form method="post" action="/admin/trunks/{{ t.id }}/standard-route" class="row">
+    <button>{{ c.t.s("Create standard dial rule") }}</button>
+    <span class="muted">{{ t.prefix_str() }} + ≥4 {{ c.t.s("digits, prefix stripped, class") }} <code>site{{ t.prefix_str() }}</code></span>
+  </form>
+  {% else %}
+  <table>{% for r in dial_rules %}<tr><td><a href="/admin/routes/{{ r.0 }}">{{ r.1 }}</a></td><td><code>{{ r.2 }}</code></td><td><code>{{ r.3 }}</code></td></tr>{% endfor %}</table>
+  <p class="muted">{{ c.t.s("Users need the class to dial this site (Users → edit, or via a Keycloak group in Permissions & routes).") }}</p>
+  {% endif %}
+</div>
+{% endif %}
+<div class="card">
+  <h3>{{ c.t.s("Inbound rules") }}</h3>
+  <p class="muted">{{ c.t.s("The dialled number is normalised first (leading zeros removed: 01020 → 1020). No matching rule: the call is rejected.") }}</p>
+  {% if t.is_sip() %}<p class="muted">{{ c.t.s("Callers on the blocklist hear busy before any rule is checked.") }}</p>{% endif %}
+  <div class="tablewrap"><table>
+    <tr><th>{{ c.t.s("Priority") }}</th><th>{{ c.t.s("Prefix") }}</th><th>{{ c.t.s("Length") }}</th><th>{{ c.t.s("Action") }}</th><th>{{ c.t.s("Details") }}</th><th></th></tr>
+    {% for r in rules %}
+    <tr><td>{{ r.priority }}</td><td><code>{{ r.match_prefix }}</code></td><td>{{ r.min_len }}–{{ r.max_str() }}</td><td>{{ c.t.s(r.action.as_str()) }}</td>
+      <td>{% if r.action == "internal" %}{% for k in r.kinds %}{{ c.t.s(k.as_str()) }} {% endfor %}{% else %}{{ c.tdesc(r.target_desc.clone().unwrap_or_default().as_str()) }}{% endif %}</td>
+      <td><form class="inline" method="post" action="/admin/trunks/{{ t.id }}/rules/{{ r.id }}/delete"><button class="danger">{{ c.t.s("Remove") }}</button></form></td></tr>
+    {% endfor %}
+  </table></div>
+  <form method="post" action="/admin/trunks/{{ t.id }}/rules" style="margin-top:12px">
+    <h4>{{ c.t.s("Add rule") }}</h4>
+    <div class="row">
+      <label>{{ c.t.s("Priority") }} <input name="priority" type="number" value="50" class="short"></label>
+      <label>{{ c.t.s("Prefix") }} <input name="match_prefix" pattern="[0-9]*" class="short" placeholder="{{ c.t.s("any") }}"></label>
+      <label>{{ c.t.s("Length") }} <input name="min_len" type="number" value="1" min="1" max="20" class="short"> – <input name="max_len" type="number" min="1" max="20" class="short" placeholder="∞"></label>
+      <label>{{ c.t.s("Action") }} <select name="action">
+        <option value="internal">{{ c.t.s("internal") }}</option><option value="target">{{ c.t.s("target") }}</option>
+        <option value="outbound">{{ c.t.s("outbound") }}</option><option value="reject">{{ c.t.s("reject") }}</option>
+      </select></label>
+    </div>
+    <div class="row" style="margin-top:8px" data-show-when="action=internal">{{ c.t.s("Reachable") }}: {% for k in kinds %}<label><input type="checkbox" name="kinds" value="{{ k }}" {% if loop.index0 < 2 %}checked{% endif %}> {{ c.t.s(k) }}</label>{% endfor %}</div>
+    <div class="row" style="margin-top:8px" data-show-when="action=target">{% let ts = newrule.clone() %}{% include "target_select.html" %}</div>
+    <p><button class="primary">{{ c.t.s("Add") }}</button></p>
+  </form>
+  <p class="muted">{{ c.t.s("“outbound” passes the number to the dial rules with this trunk's permissions (transit to other sites).") }}</p>
+</div>
+{% endif %}
+{% if !is_new && t.managed %}
+<form method="post" action="/admin/trunks/{{ t.id }}/delete" data-confirm="{{ c.t.s("Really delete?") }}"><button class="danger">{{ c.t.s("Delete") }}</button></form>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}{{ c.t.s("Audio") }}{% endblock %}
+{% block content %}
+{% include "admin_nav.html" %}
+<div class="card">
+  <h2>{{ c.t.s("Audio library") }}</h2>
+  <p class="muted">{{ c.t.s("Announcements and music: used for IVR greetings, group announcements, organization apps and hold music.") }}</p>
+  <div class="tablewrap"><table>
+    <tr><th>{{ c.t.s("ID") }}</th><th>{{ c.t.s("Name") }}</th><th>{{ c.t.s("Language") }}</th><th>{{ c.t.s("Duration") }}</th><th>{{ c.t.s("Listen") }}</th><th>{{ c.t.s("Source") }}</th><th></th></tr>
+    {% for s in sounds %}
+    <tr><td>{{ s.id }}</td>
+      <td><form class="inline row" method="post" action="/admin/sounds/{{ s.id }}"><input name="name" value="{{ s.name }}" maxlength="60"><button>{{ c.t.s("Rename") }}</button></form></td>
+      <td>{{ s.language }}</td>
+      <td>{% match s.duration_s %}{% when Some with (d) %}{{ "{:.1}"|format(d) }} s{% when None %}–{% endmatch %}</td>
+      <td><audio controls preload="none" src="/admin/sounds/{{ s.id }}/preview"></audio></td>
+      <td class="muted">{{ s.source_name }}</td>
+      <td>{% if s.used == 0 %}<form class="inline" method="post" action="/admin/sounds/{{ s.id }}/delete" data-confirm="{{ c.t.s("Really delete?") }}"><button class="danger">{{ c.t.s("Delete") }}</button></form>
+          {% else %}<span class="muted">{{ s.used }}× {{ c.t.s("used") }}</span>{% endif %}</td></tr>
+    {% endfor %}
+  </table></div>
+</div>
+<div class="card">
+  <h3>{{ c.t.s("Upload audio") }}</h3>
+  <form method="post" action="/admin/sounds" enctype="multipart/form-data" class="row">
+    <input type="file" name="file" accept="audio/*,.mp3,.wav,.ogg,.m4a,.flac" required>
+    <input name="name" placeholder="{{ c.t.s("Name (default: file name)") }}" maxlength="60">
+    <select name="language"><option value="en">{{ c.t.s("English") }}</option><option value="de">{{ c.t.s("German") }}</option></select>
+    <button class="primary">{{ c.t.s("Upload") }}</button>
+  </form>
+  <p class="muted">{{ c.t.s("MP3, WAV, OGG, M4A, FLAC up to 25 MB / 30 min. Converted automatically and loudness-normalised.") }}
+  {{ c.t.s("Music played to external callers is a public performance (GEMA): only use music you are allowed to use.") }}</p>
+</div>
+<div class="card" id="moh">
+  <h2>{{ c.t.s("Hold music") }}</h2>
+  <p class="muted">{{ c.t.s("Playlists from the audio library. The default hold music plays whenever a caller is put on hold or waits in a call group; call groups can use another playlist.") }}</p>
+  <div class="tablewrap"><table>
+    <tr><th>{{ c.t.s("Playlist") }}</th><th>{{ c.t.s("Tracks") }}</th><th>{{ c.t.s("Order") }}</th><th>{{ c.t.s("Used by") }}</th><th></th></tr>
+    {% for p in playlists %}
+    <tr><td><a href="/admin/moh/{{ p.id }}">{{ p.name }}</a>{% if p.is_default %} <span class="ok">· {{ c.t.s("default hold music") }}</span>{% endif %}</td>
+      <td>{{ p.tracks }}</td><td>{% if p.shuffle %}{{ c.t.s("shuffle") }}{% else %}{{ c.t.s("in order") }}{% endif %}</td>
+      <td>{% if p.is_default %}{{ c.t.s("everything else") }}{% else if p.groups > 0 %}{{ p.groups }} {{ c.t.s("call groups") }}{% else %}<span class="muted">–</span>{% endif %}</td>
+      <td>{% if !p.is_default %}<form class="inline" method="post" action="/admin/moh/{{ p.id }}/default"><button>{{ c.t.s("Make default hold music") }}</button></form>{% endif %}</td></tr>
+    {% endfor %}
+  </table></div>
+  <form method="post" action="/admin/moh" class="row">
+    <input name="name" maxlength="40" required placeholder="{{ c.t.s("e.g. Christmas") }}">
+    <button>{{ c.t.s("New playlist") }}</button>
+  </form>
+</div>
+{% endblock %}

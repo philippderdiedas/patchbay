@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}{{ c.t.s("Apps") }}{% endblock %}
+{% block content %}
+{% include "admin_nav.html" %}
+<div class="card">
+  <h2>{{ c.t.s("Organization apps") }}</h2>
+  <p class="muted">{{ c.t.s("Conference rooms, hold music, announcements, echo test and aliases for everybody, on internal numbers of the organization range.") }}</p>
+  {% if !company.is_empty() %}
+  <div class="tablewrap"><table>
+    <tr><th>{{ c.t.s("Number") }}</th><th>{{ c.t.s("Name") }}</th><th>{{ c.t.s("Type") }}</th><th>{{ c.t.s("Status") }}</th></tr>
+    {% for a in company %}
+    <tr><td>{% let num = a.number.to_string() %}{% include "dial.html" %}</td><td><a href="/apps/{{ a.id }}">{{ a.name }}</a></td><td>{{ c.app_kind(a.kind) }}</td>
+      <td>{% if a.enabled %}<span class="ok">{{ c.t.s("active") }}</span>{% else %}<span class="muted">{{ c.t.s("off") }}</span>{% endif %}</td></tr>
+    {% endfor %}
+  </table></div>
+  {% endif %}
+  <form method="post" action="/admin/company-apps" class="row" style="margin-top:12px">
+    <label>{{ c.t.s("Number") }} <input name="number" type="number" min="1000" max="9999" class="short" placeholder="{{ c.t.s("auto") }}"></label>
+    <label>{{ c.t.s("Name") }} <input name="name" required maxlength="40" placeholder="{{ c.t.s("e.g. Main conference") }}"></label>
+    <label>{{ c.t.s("Type") }} <select name="kind">{% for k in kinds %}<option value="{{ k }}">{{ c.app_kind(k) }}</option>{% endfor %}</select></label>
+    <button class="primary">{{ c.t.s("Create") }}</button>
+  </form>
+</div>
+<div class="card">
+  <h2>{{ c.t.s("Dialplan apps") }}</h2>
+  <p class="muted">{{ c.t.s("Dialplan blocks on an internal number, written as templates.") }}
+    {% if guard %}{{ c.t.s("Guard rails are on.") }}{% else %}<span class="warn">{{ c.t.s("Guard rails are off at this site.") }}</span>{% endif %}</p>
+  <div class="tablewrap"><table>
+    <tr><th>{{ c.t.s("Number") }}</th><th>{{ c.t.s("Name") }}</th><th>{{ c.t.s("Status") }}</th></tr>
+    {% for a in apps %}
+    <tr><td>{% let num = a.number.to_string() %}{% include "dial.html" %}</td><td><a href="/admin/apps/{{ a.id }}">{{ a.name }}</a></td>
+      <td>{% if a.enabled %}<span class="ok">{{ c.t.s("active") }}</span>{% else %}<span class="muted">{{ c.t.s("off") }}</span>{% endif %}</td></tr>
+    {% endfor %}
+  </table></div>
+  <p><a href="/admin/apps/new">+ {{ c.t.s("New custom app") }}</a></p>
+</div>
+{% endblock %}

@@ -1,0 +1,1240 @@
+# Recorded on the production PBX (2026-11-19, AMI mask call,user) with the bot dialplan markers:
+# 1) originate Local/1090@from-device (person without devices, mailbox, voicemail recorded),
+# 2) Local/5110@from-device (group, no member registered, announcement), 3) Local/8000 (conference app).
+#t 1795114218.228
+Event: Newchannel
+Privilege: call,all
+Channel: Local/1090@from-device-00000004;1
+ChannelState: 0
+ChannelStateDesc: Down
+CallerIDNum: <unknown>
+CallerIDName: <unknown>
+ConnectedLineNum: <unknown>
+ConnectedLineName: <unknown>
+Language: de
+AccountCode: 
+Context: from-device
+Exten: 1090
+Priority: 1
+Uniqueid: 1795114218.8
+Linkedid: 1795114218.8
+
+#t 1795114218.228
+Event: Newchannel
+Privilege: call,all
+Channel: Local/1090@from-device-00000004;2
+ChannelState: 4
+ChannelStateDesc: Ring
+CallerIDNum: <unknown>
+CallerIDName: <unknown>
+ConnectedLineNum: <unknown>
+ConnectedLineName: <unknown>
+Language: de
+AccountCode: 
+Context: from-device
+Exten: 1090
+Priority: 1
+Uniqueid: 1795114218.9
+Linkedid: 1795114218.8
+
+#t 1795114218.228
+Event: LocalBridge
+Privilege: call,all
+LocalOneChannel: Local/1090@from-device-00000004;1
+LocalOneChannelState: 0
+LocalOneChannelStateDesc: Down
+LocalOneCallerIDNum: <unknown>
+LocalOneCallerIDName: <unknown>
+LocalOneConnectedLineNum: <unknown>
+LocalOneConnectedLineName: <unknown>
+LocalOneLanguage: de
+LocalOneAccountCode: 
+LocalOneContext: from-device
+LocalOneExten: 1090
+LocalOnePriority: 1
+LocalOneUniqueid: 1795114218.8
+LocalOneLinkedid: 1795114218.8
+LocalTwoChannel: Local/1090@from-device-00000004;2
+LocalTwoChannelState: 4
+LocalTwoChannelStateDesc: Ring
+LocalTwoCallerIDNum: <unknown>
+LocalTwoCallerIDName: <unknown>
+LocalTwoConnectedLineNum: <unknown>
+LocalTwoConnectedLineName: <unknown>
+LocalTwoLanguage: de
+LocalTwoAccountCode: 
+LocalTwoContext: from-device
+LocalTwoExten: 1090
+LocalTwoPriority: 1
+LocalTwoUniqueid: 1795114218.9
+LocalTwoLinkedid: 1795114218.8
+Context: from-device
+Exten: 1090
+LocalOptimization: Yes
+
+#t 1795114218.228
+Event: DialBegin
+Privilege: call,all
+DestChannel: Local/1090@from-device-00000004;1
+DestChannelState: 0
+DestChannelStateDesc: Down
+DestCallerIDNum: <unknown>
+DestCallerIDName: <unknown>
+DestConnectedLineNum: <unknown>
+DestConnectedLineName: <unknown>
+DestLanguage: de
+DestAccountCode: 
+DestContext: from-device
+DestExten: 1090
+DestPriority: 1
+DestUniqueid: 1795114218.8
+DestLinkedid: 1795114218.8
+DialString: 1090@from-device
+
+#t 1795114218.231
+Event: UserEvent
+Privilege: user,all
+Channel: Local/1090@from-device-00000004;2
+ChannelState: 4
+ChannelStateDesc: Ring
+CallerIDNum: <unknown>
+CallerIDName: <unknown>
+ConnectedLineNum: <unknown>
+ConnectedLineName: <unknown>
+Language: de
+AccountCode: 
+Context: sub-user
+Exten: s
+Priority: 5
+Uniqueid: 1795114218.9
+Linkedid: 1795114218.8
+UserEvent: PbxTarget
+Kind: user
+Number: 1090
+Did: 
+Fwd: 0
+Dnd: 0
+
+#t 1795114218.235
+Event: Newstate
+Privilege: call,all
+Channel: Local/1090@from-device-00000004;2
+ChannelState: 6
+ChannelStateDesc: Up
+CallerIDNum: <unknown>
+CallerIDName: <unknown>
+ConnectedLineNum: <unknown>
+ConnectedLineName: <unknown>
+Language: de
+AccountCode: 
+Context: sub-mailbox
+Exten: s
+Priority: 1
+Uniqueid: 1795114218.9
+Linkedid: 1795114218.8
+
+#t 1795114218.235
+Event: DeviceStateChange
+Privilege: call,all
+Device: Local/1090@from-device
+State: INUSE
+
+#t 1795114218.235
+Event: Newstate
+Privilege: call,all
+Channel: Local/1090@from-device-00000004;1
+ChannelState: 6
+ChannelStateDesc: Up
+CallerIDNum: <unknown>
+CallerIDName: <unknown>
+ConnectedLineNum: <unknown>
+ConnectedLineName: <unknown>
+Language: de
+AccountCode: 
+Context: from-device
+Exten: 1090
+Priority: 1
+Uniqueid: 1795114218.8
+Linkedid: 1795114218.8
+
+#t 1795114218.235
+Event: DialEnd
+Privilege: call,all
+DestChannel: Local/1090@from-device-00000004;1
+DestChannelState: 6
+DestChannelStateDesc: Up
+DestCallerIDNum: <unknown>
+DestCallerIDName: <unknown>
+DestConnectedLineNum: <unknown>
+DestConnectedLineName: <unknown>
+DestLanguage: de
+DestAccountCode: 
+DestContext: from-device
+DestExten: 1090
+DestPriority: 1
+DestUniqueid: 1795114218.8
+DestLinkedid: 1795114218.8
+DialStatus: ANSWER
+
+#t 1795114218.235
+Event: DeviceStateChange
+Privilege: call,all
+Device: Local/1090@from-device
+State: INUSE
+
+#t 1795114218.736
+Event: UserEvent
+Privilege: user,all
+Channel: Local/1090@from-device-00000004;2
+ChannelState: 6
+ChannelStateDesc: Up
+CallerIDNum: <unknown>
+CallerIDName: <unknown>
+ConnectedLineNum: <unknown>
+ConnectedLineName: <unknown>
+Language: de
+AccountCode: 
+Context: sub-mailbox
+Exten: s
+Priority: 4
+Uniqueid: 1795114218.9
+Linkedid: 1795114218.8
+UserEvent: PbxVoicemail
+Owner: user
+Number: 1090
+VmId: vm1795114218188412
+
+#t 1795114248.284
+Event: Newchannel
+Privilege: call,all
+Channel: Local/5110@from-device-00000005;1
+ChannelState: 0
+ChannelStateDesc: Down
+CallerIDNum: <unknown>
+CallerIDName: <unknown>
+ConnectedLineNum: <unknown>
+ConnectedLineName: <unknown>
+Language: de
+AccountCode: 
+Context: from-device
+Exten: 5110
+Priority: 1
+Uniqueid: 1795114248.10
+Linkedid: 1795114248.10
+
+#t 1795114248.284
+Event: Newchannel
+Privilege: call,all
+Channel: Local/5110@from-device-00000005;2
+ChannelState: 4
+ChannelStateDesc: Ring
+CallerIDNum: <unknown>
+CallerIDName: <unknown>
+ConnectedLineNum: <unknown>
+ConnectedLineName: <unknown>
+Language: de
+AccountCode: 
+Context: from-device
+Exten: 5110
+Priority: 1
+Uniqueid: 1795114248.11
+Linkedid: 1795114248.10
+
+#t 1795114248.285
+Event: LocalBridge
+Privilege: call,all
+LocalOneChannel: Local/5110@from-device-00000005;1
+LocalOneChannelState: 0
+LocalOneChannelStateDesc: Down
+LocalOneCallerIDNum: <unknown>
+LocalOneCallerIDName: <unknown>
+LocalOneConnectedLineNum: <unknown>
+LocalOneConnectedLineName: <unknown>
+LocalOneLanguage: de
+LocalOneAccountCode: 
+LocalOneContext: from-device
+LocalOneExten: 5110
+LocalOnePriority: 1
+LocalOneUniqueid: 1795114248.10
+LocalOneLinkedid: 1795114248.10
+LocalTwoChannel: Local/5110@from-device-00000005;2
+LocalTwoChannelState: 4
+LocalTwoChannelStateDesc: Ring
+LocalTwoCallerIDNum: <unknown>
+LocalTwoCallerIDName: <unknown>
+LocalTwoConnectedLineNum: <unknown>
+LocalTwoConnectedLineName: <unknown>
+LocalTwoLanguage: de
+LocalTwoAccountCode: 
+LocalTwoContext: from-device
+LocalTwoExten: 5110
+LocalTwoPriority: 1
+LocalTwoUniqueid: 1795114248.11
+LocalTwoLinkedid: 1795114248.10
+Context: from-device
+Exten: 5110
+LocalOptimization: Yes
+
+#t 1795114248.285
+Event: DialBegin
+Privilege: call,all
+DestChannel: Local/5110@from-device-00000005;1
+DestChannelState: 0
+DestChannelStateDesc: Down
+DestCallerIDNum: <unknown>
+DestCallerIDName: <unknown>
+DestConnectedLineNum: <unknown>
+DestConnectedLineName: <unknown>
+DestLanguage: de
+DestAccountCode: 
+DestContext: from-device
+DestExten: 5110
+DestPriority: 1
+DestUniqueid: 1795114248.10
+DestLinkedid: 1795114248.10
+DialString: 5110@from-device
+
+#t 1795114248.290
+Event: UserEvent
+Privilege: user,all
+Channel: Local/5110@from-device-00000005;2
+ChannelState: 4
+ChannelStateDesc: Ring
+CallerIDNum: <unknown>
+CallerIDName: <unknown>
+ConnectedLineNum: <unknown>
+ConnectedLineName: <unknown>
+Language: de
+AccountCode: 
+Context: sub-group
+Exten: s
+Priority: 4
+Uniqueid: 1795114248.11
+Linkedid: 1795114248.10
+UserEvent: PbxTarget
+Kind: group
+Number: 5110
+Did: 
+
+#t 1795114248.292
+Event: Newstate
+Privilege: call,all
+Channel: Local/5110@from-device-00000005;2
+ChannelState: 6
+ChannelStateDesc: Up
+CallerIDNum: <unknown>
+CallerIDName: <unknown>
+ConnectedLineNum: <unknown>
+ConnectedLineName: <unknown>
+Language: de
+AccountCode: 
+Context: sub-group
+Exten: s
+Priority: 6
+Uniqueid: 1795114248.11
+Linkedid: 1795114248.10
+
+#t 1795114248.292
+Event: Newstate
+Privilege: call,all
+Channel: Local/5110@from-device-00000005;1
+ChannelState: 6
+ChannelStateDesc: Up
+CallerIDNum: <unknown>
+CallerIDName: <unknown>
+ConnectedLineNum: <unknown>
+ConnectedLineName: <unknown>
+Language: de
+AccountCode: 
+Context: from-device
+Exten: 5110
+Priority: 1
+Uniqueid: 1795114248.10
+Linkedid: 1795114248.10
+
+#t 1795114248.292
+Event: DialEnd
+Privilege: call,all
+DestChannel: Local/5110@from-device-00000005;1
+DestChannelState: 6
+DestChannelStateDesc: Up
+DestCallerIDNum: <unknown>
+DestCallerIDName: <unknown>
+DestConnectedLineNum: <unknown>
+DestConnectedLineName: <unknown>
+DestLanguage: de
+DestAccountCode: 
+DestContext: from-device
+DestExten: 5110
+DestPriority: 1
+DestUniqueid: 1795114248.10
+DestLinkedid: 1795114248.10
+DialStatus: ANSWER
+
+#t 1795114248.292
+Event: DeviceStateChange
+Privilege: call,all
+Device: Local/5110@from-device
+State: INUSE
+
+#t 1795114248.292
+Event: DeviceStateChange
+Privilege: call,all
+Device: Local/5110@from-device
+State: INUSE
+
+#t 1795114249.996
+Event: HangupRequest
+Privilege: call,all
+Channel: Local/1090@from-device-00000004;2
+ChannelState: 6
+ChannelStateDesc: Up
+CallerIDNum: <unknown>
+CallerIDName: <unknown>
+ConnectedLineNum: <unknown>
+ConnectedLineName: <unknown>
+Language: de
+AccountCode: 
+Context: sub-mailbox
+Exten: s
+Priority: 8
+Uniqueid: 1795114218.9
+Linkedid: 1795114218.8
+Cause: 0
+
+#t 1795114249.996
+Event: Hangup
+Privilege: call,all
+Channel: Local/1090@from-device-00000004;1
+ChannelState: 6
+ChannelStateDesc: Up
+CallerIDNum: <unknown>
+CallerIDName: <unknown>
+ConnectedLineNum: <unknown>
+ConnectedLineName: <unknown>
+Language: de
+AccountCode: 
+Context: from-device
+Exten: 1090
+Priority: 1
+Uniqueid: 1795114218.8
+Linkedid: 1795114218.8
+Cause: 0
+Cause-txt: Unknown
+
+#t 1795114249.997
+Event: SoftHangupRequest
+Privilege: call,all
+Channel: Local/1090@from-device-00000004;2
+ChannelState: 6
+ChannelStateDesc: Up
+CallerIDNum: <unknown>
+CallerIDName: <unknown>
+ConnectedLineNum: <unknown>
+ConnectedLineName: <unknown>
+Language: de
+AccountCode: 
+Context: sub-mailbox
+Exten: s
+Priority: 8
+Uniqueid: 1795114218.9
+Linkedid: 1795114218.8
+Cause: 16
+
+#t 1795114249.997
+Event: DeviceStateChange
+Privilege: call,all
+Device: Local/1090@from-device
+State: NOT_INUSE
+
+#t 1795114250.142
+Event: MessageWaiting
+Privilege: call,all
+Mailbox: 1010@pbx
+Waiting: 0
+New: 0
+Old: 0
+
+#t 1795114250.142
+Event: MessageWaiting
+Privilege: call,all
+Mailbox: 1011@pbx
+Waiting: 0
+New: 0
+Old: 0
+
+#t 1795114250.143
+Event: MessageWaiting
+Privilege: call,all
+Mailbox: 1015@pbx
+Waiting: 0
+New: 0
+Old: 0
+
+#t 1795114250.143
+Event: MessageWaiting
+Privilege: call,all
+Mailbox: 1018@pbx
+Waiting: 0
+New: 0
+Old: 0
+
+#t 1795114250.144
+Event: MessageWaiting
+Privilege: call,all
+Mailbox: 1020@pbx
+Waiting: 0
+New: 0
+Old: 1
+
+#t 1795114250.144
+Event: MessageWaiting
+Privilege: call,all
+Mailbox: 1021@pbx
+Waiting: 0
+New: 0
+Old: 0
+
+#t 1795114250.144
+Event: MessageWaiting
+Privilege: call,all
+Mailbox: 1024@pbx
+Waiting: 0
+New: 0
+Old: 0
+
+#t 1795114250.144
+Event: MessageWaiting
+Privilege: call,all
+Mailbox: 1090@pbx
+Waiting: 1
+New: 2
+Old: 0
+
+#t 1795114250.144
+Event: MessageWaiting
+Privilege: call,all
+Mailbox: 1099@pbx
+Waiting: 0
+New: 0
+Old: 0
+
+#t 1795114250.147
+Event: Hangup
+Privilege: call,all
+Channel: Local/1090@from-device-00000004;2
+ChannelState: 6
+ChannelStateDesc: Up
+CallerIDNum: <unknown>
+CallerIDName: <unknown>
+ConnectedLineNum: <unknown>
+ConnectedLineName: <unknown>
+Language: de
+AccountCode: 
+Context: sub-mailbox
+Exten: s
+Priority: 8
+Uniqueid: 1795114218.9
+Linkedid: 1795114218.8
+Cause: 0
+Cause-txt: Unknown
+
+#t 1795114250.148
+Event: DeviceStateChange
+Privilege: call,all
+Device: Local/1090@from-device
+State: NOT_INUSE
+
+#t 1795114254.292
+Event: HangupRequest
+Privilege: call,all
+Channel: Local/5110@from-device-00000005;2
+ChannelState: 6
+ChannelStateDesc: Up
+CallerIDNum: <unknown>
+CallerIDName: <unknown>
+ConnectedLineNum: <unknown>
+ConnectedLineName: <unknown>
+Language: de
+AccountCode: 
+Context: sub-target
+Exten: s
+Priority: 26
+Uniqueid: 1795114248.11
+Linkedid: 1795114248.10
+Cause: 0
+
+#t 1795114254.292
+Event: Hangup
+Privilege: call,all
+Channel: Local/5110@from-device-00000005;1
+ChannelState: 6
+ChannelStateDesc: Up
+CallerIDNum: <unknown>
+CallerIDName: <unknown>
+ConnectedLineNum: <unknown>
+ConnectedLineName: <unknown>
+Language: de
+AccountCode: 
+Context: from-device
+Exten: 5110
+Priority: 1
+Uniqueid: 1795114248.10
+Linkedid: 1795114248.10
+Cause: 0
+Cause-txt: Unknown
+
+#t 1795114254.292
+Event: SoftHangupRequest
+Privilege: call,all
+Channel: Local/5110@from-device-00000005;2
+ChannelState: 6
+ChannelStateDesc: Up
+CallerIDNum: <unknown>
+CallerIDName: <unknown>
+ConnectedLineNum: <unknown>
+ConnectedLineName: <unknown>
+Language: de
+AccountCode: 
+Context: sub-target
+Exten: s
+Priority: 26
+Uniqueid: 1795114248.11
+Linkedid: 1795114248.10
+Cause: 16
+
+#t 1795114254.292
+Event: Hangup
+Privilege: call,all
+Channel: Local/5110@from-device-00000005;2
+ChannelState: 6
+ChannelStateDesc: Up
+CallerIDNum: <unknown>
+CallerIDName: <unknown>
+ConnectedLineNum: <unknown>
+ConnectedLineName: <unknown>
+Language: de
+AccountCode: 
+Context: sub-target
+Exten: s
+Priority: 26
+Uniqueid: 1795114248.11
+Linkedid: 1795114248.10
+Cause: 0
+Cause-txt: Unknown
+
+#t 1795114254.293
+Event: DeviceStateChange
+Privilege: call,all
+Device: Local/5110@from-device
+State: NOT_INUSE
+
+#t 1795114254.293
+Event: DeviceStateChange
+Privilege: call,all
+Device: Local/5110@from-device
+State: NOT_INUSE
+
+#t 1795114263.350
+Event: Newchannel
+Privilege: call,all
+Channel: Local/8000@from-device-00000006;1
+ChannelState: 0
+ChannelStateDesc: Down
+CallerIDNum: <unknown>
+CallerIDName: <unknown>
+ConnectedLineNum: <unknown>
+ConnectedLineName: <unknown>
+Language: de
+AccountCode: 
+Context: from-device
+Exten: 8000
+Priority: 1
+Uniqueid: 1795114263.12
+Linkedid: 1795114263.12
+
+#t 1795114263.350
+Event: Newchannel
+Privilege: call,all
+Channel: Local/8000@from-device-00000006;2
+ChannelState: 4
+ChannelStateDesc: Ring
+CallerIDNum: <unknown>
+CallerIDName: <unknown>
+ConnectedLineNum: <unknown>
+ConnectedLineName: <unknown>
+Language: de
+AccountCode: 
+Context: from-device
+Exten: 8000
+Priority: 1
+Uniqueid: 1795114263.13
+Linkedid: 1795114263.12
+
+#t 1795114263.350
+Event: LocalBridge
+Privilege: call,all
+LocalOneChannel: Local/8000@from-device-00000006;1
+LocalOneChannelState: 0
+LocalOneChannelStateDesc: Down
+LocalOneCallerIDNum: <unknown>
+LocalOneCallerIDName: <unknown>
+LocalOneConnectedLineNum: <unknown>
+LocalOneConnectedLineName: <unknown>
+LocalOneLanguage: de
+LocalOneAccountCode: 
+LocalOneContext: from-device
+LocalOneExten: 8000
+LocalOnePriority: 1
+LocalOneUniqueid: 1795114263.12
+LocalOneLinkedid: 1795114263.12
+LocalTwoChannel: Local/8000@from-device-00000006;2
+LocalTwoChannelState: 4
+LocalTwoChannelStateDesc: Ring
+LocalTwoCallerIDNum: <unknown>
+LocalTwoCallerIDName: <unknown>
+LocalTwoConnectedLineNum: <unknown>
+LocalTwoConnectedLineName: <unknown>
+LocalTwoLanguage: de
+LocalTwoAccountCode: 
+LocalTwoContext: from-device
+LocalTwoExten: 8000
+LocalTwoPriority: 1
+LocalTwoUniqueid: 1795114263.13
+LocalTwoLinkedid: 1795114263.12
+Context: from-device
+Exten: 8000
+LocalOptimization: Yes
+
+#t 1795114263.350
+Event: DialBegin
+Privilege: call,all
+DestChannel: Local/8000@from-device-00000006;1
+DestChannelState: 0
+DestChannelStateDesc: Down
+DestCallerIDNum: <unknown>
+DestCallerIDName: <unknown>
+DestConnectedLineNum: <unknown>
+DestConnectedLineName: <unknown>
+DestLanguage: de
+DestAccountCode: 
+DestContext: from-device
+DestExten: 8000
+DestPriority: 1
+DestUniqueid: 1795114263.12
+DestLinkedid: 1795114263.12
+DialString: 8000@from-device
+
+#t 1795114263.355
+Event: Newstate
+Privilege: call,all
+Channel: Local/8000@from-device-00000006;2
+ChannelState: 6
+ChannelStateDesc: Up
+CallerIDNum: <unknown>
+CallerIDName: <unknown>
+ConnectedLineNum: <unknown>
+ConnectedLineName: <unknown>
+Language: de
+AccountCode: 
+Context: sub-app
+Exten: conference
+Priority: 1
+Uniqueid: 1795114263.13
+Linkedid: 1795114263.12
+
+#t 1795114263.355
+Event: Newstate
+Privilege: call,all
+Channel: Local/8000@from-device-00000006;1
+ChannelState: 6
+ChannelStateDesc: Up
+CallerIDNum: <unknown>
+CallerIDName: <unknown>
+ConnectedLineNum: <unknown>
+ConnectedLineName: <unknown>
+Language: de
+AccountCode: 
+Context: from-device
+Exten: 8000
+Priority: 1
+Uniqueid: 1795114263.12
+Linkedid: 1795114263.12
+
+#t 1795114263.355
+Event: DeviceStateChange
+Privilege: call,all
+Device: Local/8000@from-device
+State: INUSE
+
+#t 1795114263.355
+Event: DeviceStateChange
+Privilege: call,all
+Device: Local/8000@from-device
+State: INUSE
+
+#t 1795114263.355
+Event: DialEnd
+Privilege: call,all
+DestChannel: Local/8000@from-device-00000006;1
+DestChannelState: 6
+DestChannelStateDesc: Up
+DestCallerIDNum: <unknown>
+DestCallerIDName: <unknown>
+DestConnectedLineNum: <unknown>
+DestConnectedLineName: <unknown>
+DestLanguage: de
+DestAccountCode: 
+DestContext: from-device
+DestExten: 8000
+DestPriority: 1
+DestUniqueid: 1795114263.12
+DestLinkedid: 1795114263.12
+DialStatus: ANSWER
+
+#t 1795114263.876
+Event: BridgeCreate
+Privilege: call,all
+BridgeUniqueid: 0cd713d7-957c-43b7-946c-c93b9ce015c0
+BridgeType: base
+BridgeTechnology: softmix
+BridgeCreator: ConfBridge
+BridgeName: app4
+BridgeNumChannels: 0
+BridgeVideoSourceMode: none
+
+#t 1795114263.876
+Event: ConfbridgeStart
+Privilege: call,all
+Conference: app4
+BridgeUniqueid: 0cd713d7-957c-43b7-946c-c93b9ce015c0
+BridgeType: base
+BridgeTechnology: softmix
+BridgeCreator: ConfBridge
+BridgeName: app4
+BridgeNumChannels: 1
+BridgeVideoSourceMode: talker
+
+#t 1795114263.876
+Event: DeviceStateChange
+Privilege: call,all
+Device: confbridge:app4
+State: INUSE
+
+#t 1795114266.356
+Event: HangupRequest
+Privilege: call,all
+Channel: Local/8000@from-device-00000006;2
+ChannelState: 6
+ChannelStateDesc: Up
+CallerIDNum: <unknown>
+CallerIDName: <unknown>
+ConnectedLineNum: <unknown>
+ConnectedLineName: <unknown>
+Language: de
+AccountCode: 
+Context: sub-app
+Exten: conference
+Priority: 20
+Uniqueid: 1795114263.13
+Linkedid: 1795114263.12
+Cause: 0
+
+#t 1795114266.356
+Event: Hangup
+Privilege: call,all
+Channel: Local/8000@from-device-00000006;1
+ChannelState: 6
+ChannelStateDesc: Up
+CallerIDNum: <unknown>
+CallerIDName: <unknown>
+ConnectedLineNum: <unknown>
+ConnectedLineName: <unknown>
+Language: de
+AccountCode: 
+Context: from-device
+Exten: 8000
+Priority: 1
+Uniqueid: 1795114263.12
+Linkedid: 1795114263.12
+Cause: 0
+Cause-txt: Unknown
+
+#t 1795114266.356
+Event: DeviceStateChange
+Privilege: call,all
+Device: Local/8000@from-device
+State: NOT_INUSE
+
+#t 1795114266.725
+Event: MusicOnHoldStart
+Privilege: call,all
+Channel: Local/8000@from-device-00000006;2
+ChannelState: 6
+ChannelStateDesc: Up
+CallerIDNum: <unknown>
+CallerIDName: <unknown>
+ConnectedLineNum: <unknown>
+ConnectedLineName: <unknown>
+Language: de
+AccountCode: 
+Context: sub-app
+Exten: conference
+Priority: 20
+Uniqueid: 1795114263.13
+Linkedid: 1795114263.12
+Class: app4
+
+#t 1795114266.725
+Event: BridgeEnter
+Privilege: call,all
+BridgeUniqueid: 0cd713d7-957c-43b7-946c-c93b9ce015c0
+BridgeType: base
+BridgeTechnology: softmix
+BridgeCreator: ConfBridge
+BridgeName: app4
+BridgeNumChannels: 2
+BridgeVideoSourceMode: talker
+Channel: Local/8000@from-device-00000006;2
+ChannelState: 6
+ChannelStateDesc: Up
+CallerIDNum: <unknown>
+CallerIDName: <unknown>
+ConnectedLineNum: <unknown>
+ConnectedLineName: <unknown>
+Language: de
+AccountCode: 
+Context: sub-app
+Exten: conference
+Priority: 20
+Uniqueid: 1795114263.13
+Linkedid: 1795114263.12
+
+#t 1795114266.725
+Event: MusicOnHoldStop
+Privilege: call,all
+Channel: Local/8000@from-device-00000006;2
+ChannelState: 6
+ChannelStateDesc: Up
+CallerIDNum: <unknown>
+CallerIDName: <unknown>
+ConnectedLineNum: <unknown>
+ConnectedLineName: <unknown>
+Language: de
+AccountCode: 
+Context: sub-app
+Exten: conference
+Priority: 20
+Uniqueid: 1795114263.13
+Linkedid: 1795114263.12
+
+#t 1795114266.725
+Event: BridgeLeave
+Privilege: call,all
+BridgeUniqueid: 0cd713d7-957c-43b7-946c-c93b9ce015c0
+BridgeType: base
+BridgeTechnology: softmix
+BridgeCreator: ConfBridge
+BridgeName: app4
+BridgeNumChannels: 1
+BridgeVideoSourceMode: talker
+Channel: Local/8000@from-device-00000006;2
+ChannelState: 6
+ChannelStateDesc: Up
+CallerIDNum: <unknown>
+CallerIDName: <unknown>
+ConnectedLineNum: <unknown>
+ConnectedLineName: <unknown>
+Language: de
+AccountCode: 
+Context: sub-app
+Exten: conference
+Priority: 20
+Uniqueid: 1795114263.13
+Linkedid: 1795114263.12
+
+#t 1795114266.725
+Event: ConfbridgeJoin
+Privilege: call,all
+Conference: app4
+BridgeUniqueid: 0cd713d7-957c-43b7-946c-c93b9ce015c0
+BridgeType: base
+BridgeTechnology: softmix
+BridgeCreator: ConfBridge
+BridgeName: app4
+BridgeNumChannels: 2
+BridgeVideoSourceMode: talker
+Channel: Local/8000@from-device-00000006;2
+ChannelState: 6
+ChannelStateDesc: Up
+CallerIDNum: <unknown>
+CallerIDName: <unknown>
+ConnectedLineNum: <unknown>
+ConnectedLineName: <unknown>
+Language: de
+AccountCode: 
+Context: sub-app
+Exten: conference
+Priority: 20
+Uniqueid: 1795114263.13
+Linkedid: 1795114263.12
+Admin: No
+Muted: No
+
+#t 1795114266.725
+Event: ConfbridgeLeave
+Privilege: call,all
+Conference: app4
+BridgeUniqueid: 0cd713d7-957c-43b7-946c-c93b9ce015c0
+BridgeType: base
+BridgeTechnology: softmix
+BridgeCreator: ConfBridge
+BridgeName: app4
+BridgeNumChannels: 2
+BridgeVideoSourceMode: talker
+Channel: Local/8000@from-device-00000006;2
+ChannelState: 6
+ChannelStateDesc: Up
+CallerIDNum: <unknown>
+CallerIDName: <unknown>
+ConnectedLineNum: <unknown>
+ConnectedLineName: <unknown>
+Language: de
+AccountCode: 
+Context: sub-app
+Exten: conference
+Priority: 20
+Uniqueid: 1795114263.13
+Linkedid: 1795114263.12
+Admin: No
+
+#t 1795114266.725
+Event: ConfbridgeEnd
+Privilege: call,all
+Conference: app4
+BridgeUniqueid: 0cd713d7-957c-43b7-946c-c93b9ce015c0
+BridgeType: base
+BridgeTechnology: softmix
+BridgeCreator: ConfBridge
+BridgeName: app4
+BridgeNumChannels: 1
+BridgeVideoSourceMode: talker
+
+#t 1795114266.725
+Event: DeviceStateChange
+Privilege: call,all
+Device: confbridge:app4
+State: NOT_INUSE
+
+#t 1795114267.111
+Event: DeviceStateChange
+Privilege: call,all
+Device: CBAnn/app4
+State: INUSE
+
+#t 1795114267.111
+Event: DeviceStateChange
+Privilege: call,all
+Device: CBAnn/app4
+State: UNKNOWN
+
+#t 1795114267.111
+Event: BridgeDestroy
+Privilege: call,all
+BridgeUniqueid: 0cd713d7-957c-43b7-946c-c93b9ce015c0
+BridgeType: base
+BridgeTechnology: softmix
+BridgeCreator: ConfBridge
+BridgeName: app4
+BridgeNumChannels: 0
+BridgeVideoSourceMode: talker
+
+#t 1795114267.111
+Event: SoftHangupRequest
+Privilege: call,all
+Channel: Local/8000@from-device-00000006;2
+ChannelState: 6
+ChannelStateDesc: Up
+CallerIDNum: <unknown>
+CallerIDName: <unknown>
+ConnectedLineNum: <unknown>
+ConnectedLineName: <unknown>
+Language: de
+AccountCode: 
+Context: sub-app
+Exten: conference
+Priority: 20
+Uniqueid: 1795114263.13
+Linkedid: 1795114263.12
+Cause: 16
+
+#t 1795114267.111
+Event: Hangup
+Privilege: call,all
+Channel: Local/8000@from-device-00000006;2
+ChannelState: 6
+ChannelStateDesc: Up
+CallerIDNum: <unknown>
+CallerIDName: <unknown>
+ConnectedLineNum: <unknown>
+ConnectedLineName: <unknown>
+Language: de
+AccountCode: 
+Context: sub-app
+Exten: conference
+Priority: 20
+Uniqueid: 1795114263.13
+Linkedid: 1795114263.12
+Cause: 16
+Cause-txt: Normal Clearing
+
+#t 1795114267.111
+Event: DeviceStateChange
+Privilege: call,all
+Device: Local/8000@from-device
+State: NOT_INUSE
+
+#t 1795114283.707
+Event: MessageWaiting
+Privilege: call,all
+Mailbox: 1010@pbx
+Waiting: 0
+New: 0
+Old: 0
+
+#t 1795114283.707
+Event: MessageWaiting
+Privilege: call,all
+Mailbox: 1011@pbx
+Waiting: 0
+New: 0
+Old: 0
+
+#t 1795114283.708
+Event: MessageWaiting
+Privilege: call,all
+Mailbox: 1015@pbx
+Waiting: 0
+New: 0
+Old: 0
+
+#t 1795114283.708
+Event: MessageWaiting
+Privilege: call,all
+Mailbox: 1018@pbx
+Waiting: 0
+New: 0
+Old: 0
+
+#t 1795114283.708
+Event: MessageWaiting
+Privilege: call,all
+Mailbox: 1020@pbx
+Waiting: 0
+New: 0
+Old: 1
+
+#t 1795114283.708
+Event: MessageWaiting
+Privilege: call,all
+Mailbox: 1021@pbx
+Waiting: 0
+New: 0
+Old: 0
+
+#t 1795114283.708
+Event: MessageWaiting
+Privilege: call,all
+Mailbox: 1024@pbx
+Waiting: 0
+New: 0
+Old: 0
+
+#t 1795114283.708
+Event: MessageWaiting
+Privilege: call,all
+Mailbox: 1090@pbx
+Waiting: 1
+New: 1
+Old: 1
+
+#t 1795114283.708
+Event: MessageWaiting
+Privilege: call,all
+Mailbox: 1099@pbx
+Waiting: 0
+New: 0
+Old: 0
+
+#t 1795114283.821
+Event: MessageWaiting
+Privilege: call,all
+Mailbox: 1010@pbx
+Waiting: 0
+New: 0
+Old: 0
+
+#t 1795114283.821
+Event: MessageWaiting
+Privilege: call,all
+Mailbox: 1011@pbx
+Waiting: 0
+New: 0
+Old: 0
+
+#t 1795114283.821
+Event: MessageWaiting
+Privilege: call,all
+Mailbox: 1015@pbx
+Waiting: 0
+New: 0
+Old: 0
+
+#t 1795114283.821
+Event: MessageWaiting
+Privilege: call,all
+Mailbox: 1018@pbx
+Waiting: 0
+New: 0
+Old: 0
+
+#t 1795114283.822
+Event: MessageWaiting
+Privilege: call,all
+Mailbox: 1020@pbx
+Waiting: 0
+New: 0
+Old: 1
+
+#t 1795114283.822
+Event: MessageWaiting
+Privilege: call,all
+Mailbox: 1021@pbx
+Waiting: 0
+New: 0
+Old: 0
+
+#t 1795114283.822
+Event: MessageWaiting
+Privilege: call,all
+Mailbox: 1024@pbx
+Waiting: 0
+New: 0
+Old: 0
+
+#t 1795114283.822
+Event: MessageWaiting
+Privilege: call,all
+Mailbox: 1090@pbx
+Waiting: 1
+New: 1
+Old: 0
+
+#t 1795114283.822
+Event: MessageWaiting
+Privilege: call,all
+Mailbox: 1099@pbx
+Waiting: 0
+New: 0
+Old: 0
+

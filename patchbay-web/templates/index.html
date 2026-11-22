@@ -1,0 +1,232 @@
+{% extends "base.html" %}
+{% block content %}
+{% match extension %}
+{% when None %}
+{% match claim_range %}{% when Some with (range) %}
+<div class="card">
+  <h2>{{ c.t.s("Get a phone number") }}</h2>
+  <p>{{ c.t.s("You don't have a phone number here yet. Take one: then you can set up phones (e.g. Linphone with a QR code), be reached internally and call out.") }}</p>
+  <form method="post" action="/me/claim" class="row">
+    <label>{{ c.t.s("Number") }} <input name="number" inputmode="numeric" pattern="[1-9][0-9]{3}" maxlength="4" class="short" placeholder="{{ c.t.s("next free") }}"></label>
+    <button class="primary">{{ c.t.s("Take this number") }}</button>
+    <button name="random" value="1">{{ c.t.s("Random free number") }}</button>
+  </form>
+  <p class="muted">{{ c.t.s("Free 4-digit numbers in") }} {{ range }}. {{ c.t.s("Leave the field empty for the next free number.") }}</p>
+</div>
+{% when None %}
+<div class="card"><h2>{{ c.t.s("No phone account") }}</h2>
+<p>{{ c.t.s("Your Keycloak account is not linked to an extension yet. Please contact an admin.") }}</p>
+{% if !login_id.is_empty() %}<p class="muted">{{ c.t.s("Your login ID for the admin:") }} <code>{{ login_id }}</code></p>{% endif %}</div>
+{% endmatch %}
+{% when Some with (ext) %}
+{% if forward.is_some() || dnd %}
+<div class="banner" role="status">
+  {% if forward.is_some() %}
+  <form method="post" action="/me/forward" class="banner-row">
+    <span class="icon i-phone-fwd"></span>
+    <span class="banner-text"><b>{{ c.t.s("Forwarding active") }} → {{ forward_label }}</b><br>
+      <small>{{ c.t.s("All calls to you go straight there; your phones do not ring.") }}</small></span>
+    <button name="clear" value="1">{{ c.t.s("Remove") }}</button>
+  </form>
+  {% endif %}
+  {% if dnd %}
+  <form method="post" action="/me/dnd" class="banner-row">
+    <span class="icon i-bell-off"></span>
+    <span class="banner-text"><b>{{ c.t.s("Do not disturb is on") }}</b><br>
+      <small>{% if forward.is_some() %}{{ c.t.s("Your phones do not ring. While forwarding is active, the forward takes precedence.") }}{% else %}{{ c.t.s("Your phones do not ring; callers go straight to your no-answer target.") }}{% endif %}</small></span>
+    <button>{{ c.t.s("Turn off") }}</button>
+  </form>
+  {% endif %}
+</div>
+{% endif %}
+<div class="card">
+  <h2>{{ c.t.s("My devices") }} · {{ c.t.s("Extension") }} {{ ext }}</h2>
+  <p class="muted">{{ c.t.s("A call to") }} {{ ext }} {{ c.t.s("rings on all devices with ringing switched on.") }}</p>
+  {% if let Some(range) = choose_number %}
+  <form method="post" action="/me/number" class="row">
+    <label>{{ c.t.s("My number") }} <input name="number" value="{{ ext }}" inputmode="numeric" pattern="[1-9][0-9]{3}" maxlength="4" class="short" required></label>
+    <button>{{ c.t.s("Change") }}</button> <span class="muted">{{ c.t.s("free 4-digit number in") }} {{ range }}</span>
+  </form>
+  {% endif %}
+  <div class="tablewrap"><table class="stacked" data-regpoll="/devices/status">
+    <tr><th>{{ c.t.s("No.") }}</th><th>{{ c.t.s("Label") }}</th><th>{{ c.t.s("Type") }}</th><th>{{ c.t.s("Status") }}</th><th>{{ c.t.s("Ringing") }}</th><th></th></tr>
+    {% for d in devices %}
+    <tr>
+      <td data-label="{{ c.t.s("No.") }}">{% if let Some(n) = d.number %}{% let num = n.to_string() %}{% include "dial.html" %}{% else %}<span class="muted">–</span>{% endif %}</td>
+      <td data-label="{{ c.t.s("Label") }}">{{ d.label }}{% if d.managed_by == "admin" %} <span class="muted">{{ c.t.s("(managed by admin)") }}</span>{% endif %}</td>
+      <td data-label="{{ c.t.s("Type") }}">{{ d.type }} <span class="muted">{{ d.transport }}</span></td>
+      <td data-label="{{ c.t.s("Status") }}" data-reg="{{ d.id }}">{% if !d.enabled %}<span class="off">{{ c.t.s("locked") }}</span>{% else %}{% let st = d.reg_state() %}<span class="reg reg-{{ st }}">{% if st == "online" %}{{ c.t.s("registered") }}{% else if st == "unreachable" %}{{ c.t.s("not reachable") }}{% else %}{{ c.t.s("not registered") }}{% endif %}</span>{% let det = d.reg_detail() %}{% if !det.is_empty() %}<br><small class="muted">{{ det }}</small>{% endif %}{% endif %}</td>
+      <td data-label="{{ c.t.s("Ringing") }}"><form class="inline" method="post" action="/devices/{{ d.id }}">
+        {% if d.ring %}<input type="hidden" name="action" value="ring_off"><button><span class="icon i-bell"></span> {{ c.t.s("on") }}</button>
+        {% else %}<input type="hidden" name="action" value="ring_on"><button><span class="icon i-bell-off"></span> {{ c.t.s("off") }}</button>{% endif %}
+      </form>
+      {% if d.ring %}<form class="inline" method="post" action="/devices/{{ d.id }}" title="{{ c.t.s("Ring delay") }}">
+        <input type="hidden" name="action" value="delay">
+        <select name="delay" data-autosubmit aria-label="{{ c.t.s("Ring delay") }}">
+          {% for (s, sel) in d.delay_options() %}<option value="{{ s }}" {% if sel %}selected{% endif %}>{% if s == 0 %}{{ c.t.s("immediately") }}{% else %}+{{ s }} s{% endif %}</option>{% endfor %}
+        </select></form>{% endif %}</td>
+      <td class="row">
+        {% if d.enabled %}<button type="button" data-ringtest="{{ d.id }}">{{ c.t.s("Ring test") }}</button>{% endif %}
+        {% if d.managed_by == "self" %}
+          {% if d.type == "linphone" && d.enabled %}<form class="inline" method="post" action="/devices/{{ d.id }}/qr"><button>{{ c.t.s("QR code") }}</button></form>{% endif %}
+          <form class="inline" method="post" action="/devices/{{ d.id }}">
+            {% if d.enabled %}<input type="hidden" name="action" value="disable"><button>{{ c.t.s("Lock") }}</button>
+            {% else if d.admin_locked %}<span class="muted">{{ c.t.s("locked by admin") }}</span>
+            {% else %}<input type="hidden" name="action" value="enable"><button>{{ c.t.s("Unlock") }}</button>{% endif %}
+          </form>
+          <form class="inline" method="post" action="/devices/{{ d.id }}" data-confirm="{{ c.t.s("Really delete?") }}">
+            <input type="hidden" name="action" value="delete"><button class="danger">{{ c.t.s("Delete") }}</button></form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table></div>
+  {% if devices.is_empty() %}<p class="muted">{{ c.t.s("No devices yet.") }}</p>{% endif %}
+  {% if may_phone %}<div class="card-sub" id="add-device">
+  <h3>{{ c.t.s("Add device") }}</h3>
+  <form method="post" action="/devices" class="row">
+    <input name="label" placeholder="{{ c.t.s("e.g. phone, laptop") }}" maxlength="40" required>
+    {% if may_sip %}<select name="type">
+      <option value="linphone">{{ c.t.s("Linphone (QR code)") }}</option>
+      <option value="generic">{{ c.t.s("SIP device (manual setup)") }}</option>
+    </select>
+    {% let tsel_t = "tls" %}{% let tsel_s = "optional" %}{% include "transport_select.html" %}{% endif %}
+    <button class="primary">{{ c.t.s("Create") }}</button>
+  </form>
+  <p class="muted">{{ c.t.s("Install Linphone, choose “Scan QR code” or “Fetch remote configuration” in the assistant. Only inside the internal network or via VPN.") }}</p>
+  {% if may_sip %}<p class="muted">{{ c.t.s("SIP device: credentials are shown once and entered on the device (e.g. a DECT base). Linphone: QR code.") }}</p>{% endif %}
+  </div>{% endif %}
+</div>
+{% if extension.is_some() %}
+<div class="card{% if dnd %} card-warn{% endif %}" id="dnd">
+  <h3>{% if dnd %}<span class="icon i-bell-off"></span> {{ c.t.s("Do not disturb: on") }}{% else %}<span class="icon i-bell"></span> {{ c.t.s("Do not disturb: off") }}{% endif %}</h3>
+  <p class="muted">{{ c.t.s("When on, your phones do not ring. Callers go straight to what happens when you don't answer:") }}
+    {% match noanswer %}{% when Some with (na) %}<a href="#noanswer">{% if na.mode == "mailbox" %}{{ c.t.s("your mailbox") }}{% else if na.mode == "nothing" %}{{ c.t.s("“nobody available”") }}{% else %}{{ na.value.clone().unwrap_or_default() }}{% endif %}</a>.{% when None %}{{ c.t.s("as set by the admins.") }}{% endmatch %}
+    {{ c.t.s("Call groups skip you.") }}</p>
+  <form method="post" action="/me/dnd" class="row">
+    {% if dnd %}<button class="primary">{{ c.t.s("Turn off do not disturb") }}</button>
+    {% else %}<input type="hidden" name="on" value="1"><button>{{ c.t.s("Turn on do not disturb") }}</button>{% endif %}
+  </form>
+</div>
+{% if !groups.is_empty() || !app_groups.is_empty() %}
+<div class="card" id="groups">
+  <h3>{{ c.t.s("My call groups") }}</h3>
+  <p class="muted">{{ c.t.s("Log out of a group when you can't take its calls (e.g. the hotline); your other calls still reach you. The group mailbox stays visible.") }}</p>
+  <table>
+    {% for g in groups %}<tr><td>{{ g.number }}</td><td>{{ g.name }}{% if g.queue %} <span class="muted">· {{ c.t.s("queue") }}</span>{% endif %}</td>
+      <td>{% if g.logged_in %}<span class="pill ok">{{ c.t.s("logged in") }}</span>{% else %}<span class="pill warn">{{ c.t.s("logged out") }}</span>{% endif %}</td>
+      <td><form class="inline" method="post" action="/me/groups/{{ g.id }}/login">
+        {% if g.logged_in %}<button>{{ c.t.s("Log out") }}</button>{% else %}<input type="hidden" name="on" value="1"><button class="primary">{{ c.t.s("Log in") }}</button>{% endif %}
+      </form></td></tr>{% endfor %}
+    {% for (gid, gnum, gname, owner) in app_groups %}<tr><td>{{ gnum }}</td><td>{{ gname }} <span class="muted">· {{ c.t.s("group of") }} {{ owner }}</span></td>
+      <td></td>
+      <td><form class="inline" method="post" action="/me/app-groups/{{ gid }}/leave" data-confirm="{{ c.t.s("Leave this group?") }}"><button>{{ c.t.s("Leave") }}</button></form></td></tr>{% endfor %}
+  </table>
+</div>
+{% endif %}
+<div class="card{% if forward.is_some() %} card-warn{% endif %}" id="forwarding">
+  <h3><span class="icon i-phone-fwd"></span> {% if forward.is_some() %}{{ c.t.s("Forwarding: to") }} {{ forward_label }}{% else %}{{ c.t.s("Forwarding: off") }}{% endif %}</h3>
+  <p class="muted">{{ c.t.s("Every call to you goes straight to this number; your phones do not ring. Calls to your call groups still reach you.") }}</p>
+  <form method="post" action="/me/forward" class="row">
+    <label>{{ c.t.s("Forward all calls to") }} <input name="target" value="{{ forward.clone().unwrap_or_default() }}" placeholder="{{ c.t.s("e.g. 1021, 5000 or 0176…") }}" maxlength="30"></label>
+    <button class="primary">{% if forward.is_some() %}{{ c.t.s("Change") }}{% else %}{{ c.t.s("Set") }}{% endif %}</button>
+    {% if forward.is_some() %}<button name="clear" value="1">{{ c.t.s("Remove forwarding") }}</button>{% endif %}
+  </form>
+  <p class="muted">{{ c.t.s("On the phone:") }} <code>*761</code>/<code>*760</code> {{ c.t.s("DND on/off") }} · <code>*21*<i>{{ c.t.s("number") }}</i>#</code> {{ c.t.s("forward") }} · <code>#21#</code> {{ c.t.s("forward off") }} · <code>*8</code> {{ c.t.s("pick up") }} · <code>*8<i>{{ c.t.s("extension") }}</i></code> {{ c.t.s("pick up a colleague's call") }} · <code>*97</code> {{ c.t.s("listen to voicemail") }}</p>
+  {% if c.chat_bot() %}<p><a href="/me/chat">{{ c.t.s("Chat: missed calls, voicemails and control from the chat") }}</a></p>{% endif %}
+</div>
+{% if let Some(na) = noanswer %}
+<div class="card" id="noanswer">
+  <h3>{{ c.t.s("When I don't answer") }}</h3>
+  <form method="post" action="/me/noanswer" class="stack">
+    <label>{{ c.t.s("Ring for") }}
+      <select name="ring_s">{% for (sec, sel) in na.ring_options() %}<option value="{{ sec }}" {% if sel %}selected{% endif %}>{{ sec }} s</option>{% endfor %}</select></label>
+    <label><input type="radio" name="mode" value="mailbox" {% if na.mode == "mailbox" %}checked{% endif %}> {{ c.t.s("then my mailbox") }}</label>
+    <label><input type="radio" name="mode" value="number" {% if na.mode == "number" %}checked{% endif %}> {{ c.t.s("then forward to") }}
+      <input name="number" value="{% if na.mode == "number" %}{{ na.value.clone().unwrap_or_default() }}{% endif %}" placeholder="{{ c.t.s("e.g. 1021, 5000 or 0176…") }}" maxlength="30"></label>
+    <label><input type="radio" name="mode" value="nothing" {% if na.mode == "nothing" %}checked{% endif %}> {{ c.t.s("then nothing (“nobody available”)") }}</label>
+    {% if na.mode == "other" %}<p class="muted">{{ c.t.s("Currently set by an admin:") }} {{ na.value.clone().unwrap_or_default() }}</p>{% endif %}
+    <p><button class="primary">{{ c.t.s("Save") }}</button></p>
+  </form>
+  <p class="muted">{{ c.t.s("External numbers only within your own dialling permissions. Also in the chat bot: noanswer, ringtime.") }}</p>
+</div>
+{% endif %}
+{% if may_phone %}
+<div class="card" id="blocklist">
+  <h3>{{ c.t.s("My blocked numbers") }}</h3>
+  <p class="muted">{{ c.t.s("Callers with these numbers hear busy when they call you (also via your forwarding). Calls to your call groups still reach you.") }}</p>
+  {% if !blocked.is_empty() %}
+  <div class="tablewrap"><table class="stacked">
+    <tr><th>{{ c.t.s("Number") }}</th><th>{{ c.t.s("Note") }}</th><th>{{ c.t.s("Blocked calls") }}</th><th>{{ c.t.s("Last") }}</th><th>{{ c.t.s("Added") }}</th><th></th></tr>
+    {% for b in blocked %}
+    <tr>
+      <td data-label="{{ c.t.s("Number") }}"><code>{{ b.e164 }}</code></td>
+      <td data-label="{{ c.t.s("Note") }}">{{ b.note }}</td>
+      <td data-label="{{ c.t.s("Blocked calls") }}">{{ b.hits }}</td>
+      <td data-label="{{ c.t.s("Last") }}">{{ b.last_hit.clone().unwrap_or_default() }}</td>
+      <td data-label="{{ c.t.s("Added") }}" class="muted">{{ b.created_at }}</td>
+      <td><form class="inline" method="post" action="/me/blocklist/{{ b.id }}/delete"><button>{{ c.t.s("Remove") }}</button></form></td>
+    </tr>
+    {% endfor %}
+  </table></div>
+  {% endif %}
+  <form method="post" action="/me/blocklist" class="row">
+    <input name="number" inputmode="tel" placeholder="{{ c.t.s("e.g. 040 123456 or +4940…") }}" aria-label="{{ c.t.s("Number") }}" maxlength="30" required>
+    <input name="note" placeholder="{{ c.t.s("Note") }}" aria-label="{{ c.t.s("Note") }}" maxlength="200">
+    <button>{{ c.t.s("Block") }}</button>
+  </form>
+  <p class="muted">{{ c.t.s("Also during a call in the calls panel at the bottom right: “Block this number for me”.") }}</p>
+</div>
+{% endif %}
+{% endif %}
+{% if may_phone && (user_apps || !apps.is_empty()) %}
+<div class="card">
+  <h3>{{ c.t.s("My apps") }}</h3>
+  {% if !apps.is_empty() %}
+  <div class="tablewrap"><table>
+    <tr><th>{{ c.t.s("No.") }}</th><th>{{ c.t.s("Name") }}</th><th>{{ c.t.s("Type") }}</th><th>{{ c.t.s("Status") }}</th></tr>
+    {% for a in apps %}
+    <tr><td>{% let num = a.number.to_string() %}{% include "dial.html" %}</td><td><a href="/apps/{{ a.id }}">{{ a.name }}</a></td>
+      <td>{{ c.app_kind(a.kind) }}</td>
+      <td>{% if !self.kind_allowed(a.kind) %}<span class="warn">{{ c.t.s("not available at this site") }}</span>{% else if a.enabled %}<span class="ok">{{ c.t.s("active") }}</span>{% else %}<span class="muted">{{ c.t.s("off") }}</span>{% endif %}</td></tr>
+    {% endfor %}
+  </table></div>{% endif %}
+  {% if user_apps %}<form method="post" action="/apps" class="row" style="margin-top:12px">
+    <input name="name" placeholder="{{ c.t.s("e.g. Team meeting") }}" required maxlength="40">
+    <select name="kind">
+      {% for k in app_kinds %}<option value="{{ k }}">{{ c.app_kind(k) }}</option>{% endfor %}
+    </select>
+    {% if choose_app_number %}<input name="number" inputmode="numeric" pattern="[1-9][0-9]{3}" maxlength="4" class="short" placeholder="{{ c.t.s("No. (optional)") }}">{% endif %}
+    <button class="primary">{{ c.t.s("Create") }}</button>
+  </form>{% endif %}
+  <p class="muted">{{ c.t.s("Apps get their own internal number and can be called like a phone.") }} <a href="/media">{{ c.t.s("My media") }}</a></p>
+</div>
+{% endif %}
+{% if phonebook_optional %}
+<div class="card">
+  <h3>{{ c.t.s("Phone book") }}</h3>
+  <form method="post" action="/me/phonebook" class="row">
+    <label><input type="checkbox" name="listed" {% if in_phonebook %}checked{% endif %} onchange="this.form.submit()"> {{ c.t.s("Show me in the internal phone book") }}</label>
+    <noscript><button>{{ c.t.s("Save") }}</button></noscript>
+  </form>
+</div>
+{% endif %}
+{% if let Some(login) = local_login %}
+<div class="card" id="password">
+  <h3>{{ c.t.s("Password") }}</h3>
+  {% if password_changed %}<p class="ok">{{ c.t.s("Your password has been changed.") }}</p>{% endif %}
+  <form method="post" action="/me/password">
+    <input type="hidden" name="login" value="{{ login }}" autocomplete="username">
+    <table class="form">
+      <tr><th>{{ c.t.s("Login name") }}</th><td><code>{{ login }}</code></td></tr>
+      <tr><th>{{ c.t.s("Current password") }}</th><td><input name="current" type="password" autocomplete="current-password" required maxlength="1024"></td></tr>
+      <tr><th>{{ c.t.s("New password") }}</th><td><input name="new" type="password" autocomplete="new-password" required minlength="10" maxlength="256"></td></tr>
+      <tr><th>{{ c.t.s("Repeat new password") }}</th><td><input name="repeat" type="password" autocomplete="new-password" required minlength="10" maxlength="256"></td></tr>
+    </table>
+    <p class="row"><button class="primary">{{ c.t.s("Change password") }}</button>
+      <span class="muted">{{ c.t.s("At least 10 characters. Your other sessions are logged out.") }}</span></p>
+  </form>
+</div>
+{% endif %}
+{% endmatch %}
+{% endblock %}

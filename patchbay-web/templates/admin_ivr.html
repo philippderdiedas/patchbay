@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}{{ c.t.s("IVR") }} {{ ivr.name }}{% endblock %}
+{% block content %}
+{% include "admin_nav.html" %}
+<form method="post" action="/admin/ivrs/{{ ivr.id }}" class="card">
+  <h2>{{ c.t.s("IVR") }} {{ ivr.id }} · {{ ivr.name }} <a href="/admin/flow/ivr/{{ ivr.id }}" class="noprint" style="font-size:15px">{{ c.t.s("Show call flow") }}</a></h2>
+  <table class="form">
+    <tr><th>{{ c.t.s("Name") }}</th><td><input name="name" value="{{ ivr.name }}" required maxlength="40"></td></tr>
+    <tr><th>{{ c.t.s("Internal number") }}</th><td><input name="number" type="number" min="1000" max="9999" value="{{ ivr.number_str() }}" class="short" placeholder="{{ c.t.s("none") }}"> <span class="muted">{{ c.t.s("optional, 4 digits; external numbers are set under Numbers") }}</span></td></tr>
+    <tr><th>{{ c.t.s("Greeting") }}</th><td><select name="greeting"><option value="">{{ c.t.s("(none)") }}</option>
+      {% for s in opts.sounds %}<option value="{{ s.0 }}" {% if ivr.greeting_is(s.0.as_str()) %}selected{% endif %}>{{ s.1 }}</option>{% endfor %}
+    </select> <span class="muted">{{ c.t.s("Pressing a key interrupts the greeting.") }}</span></td></tr>
+    <tr><th>{{ c.t.s("Wait for key") }}</th><td><input name="timeout_s" type="number" min="1" max="30" value="{{ ivr.timeout_s }}" class="short"> s</td></tr>
+    <tr><th>{{ c.t.s("Repeats") }}</th><td><input name="repeat" type="number" min="0" max="10" value="{{ ivr.repeat }}" class="short"></td></tr>
+    <tr><th>{{ c.t.s("Unassigned key") }}</th><td><select name="invalid_mode">
+      <option value="announce" {% if ivr.invalid_mode == "announce" %}selected{% endif %}>{{ c.t.s("announce “invalid” and repeat") }}</option>
+      <option value="ignore" {% if ivr.invalid_mode == "ignore" %}selected{% endif %}>{{ c.t.s("ignore, keep waiting") }}</option>
+    </select></td></tr>
+    <tr><th>{{ c.t.s("No input") }}</th><td>{% let ts = timeout.clone() %}{% include "target_select.html" %}</td></tr>
+  </table>
+  <p><button class="primary">{{ c.t.s("Save") }}</button></p>
+</form>
+<div class="card">
+  <h3>{{ c.t.s("Keys") }}</h3>
+  <table>
+    <tr><th>{{ c.t.s("Digit") }}</th><th>{{ c.t.s("Target") }}</th></tr>
+    {% for o in options %}<tr><td><b>{{ o.digit }}</b></td><td>{{ c.tdesc(o.target_desc) }}</td></tr>{% endfor %}
+  </table>
+  <form method="post" action="/admin/ivrs/{{ ivr.id }}/options" class="row" style="margin-top:12px">
+    <select name="digit">{% for d in ["1","2","3","4","5","6","7","8","9","0","*","#"] %}<option>{{ d }}</option>{% endfor %}</select>
+    {% let ts = newopt.clone() %}{% include "target_select.html" %}
+    <button class="primary">{{ c.t.s("Set") }}</button>
+  </form>
+</div>
+<form method="post" action="/admin/ivrs/{{ ivr.id }}/delete" data-confirm="{{ c.t.s("Really delete?") }}"><button class="danger">{{ c.t.s("Delete IVR") }}</button></form>
+{% endblock %}

@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}{{ c.t.s("Permissions & routes") }}{% endblock %}
+{% block content %}
+{% include "admin_nav.html" %}
+<div class="card">
+  <h2>{{ c.t.s("Permission classes") }}</h2>
+  <p class="muted">{{ c.t.s("Every outbound route belongs to a class. A user may dial via a route if they have its class.") }}</p>
+  <div class="tablewrap"><table>
+    <tr><th>{{ c.t.s("Key") }}</th><th>{{ c.t.s("Name") }}</th><th>{{ c.t.s("Description") }}</th><th>{{ c.t.s("Default") }}</th><th>{{ c.t.s("Keycloak group") }}</th><th>{{ c.t.s("Routes") }}</th><th>{{ c.t.s("Users") }}</th><th></th></tr>
+    {% for cl in classes %}
+    <tr>
+      <td><code>{{ cl.key }}</code>{% if cl.builtin %} <span class="muted">{{ c.t.s("(built in)") }}</span>{% endif %}</td>
+      <td>{{ cl.name }}</td><td class="muted">{{ cl.description }}</td>
+      <td>{% if cl.default_on %}{{ c.t.s("yes") }}{% endif %}</td>
+      <td>{% match cl.kc_group %}{% when Some with (g) %}<code>{{ g }}</code>{% when None %}<span class="muted">–</span>{% endmatch %}</td><td>{{ cl.routes }}</td><td>{{ cl.users }}</td>
+      <td>{% if !cl.builtin && cl.routes == 0 %}
+        <form class="inline" method="post" action="/admin/classes/{{ cl.key }}/delete" data-confirm="{{ c.t.s("Really delete?") }}"><button class="danger">{{ c.t.s("Delete") }}</button></form>
+      {% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table></div>
+</div>
+<div class="card">
+  <h3>{{ c.t.s("Create or change class") }}</h3>
+  <form method="post" action="/admin/classes" class="row">
+    <input name="key" placeholder="{{ c.t.s("key (a–z, 0–9, _)") }}" required pattern="[a-z][a-z0-9_]{1,30}">
+    <input name="name" placeholder="{{ c.t.s("Name") }}" required>
+    <input name="description" placeholder="{{ c.t.s("Description") }}">
+    <input name="kc_group" placeholder="{{ c.t.s("Keycloak group (optional)") }}">
+    <label><input type="checkbox" name="default_on"> {{ c.t.s("Default for new users") }}</label>
+    <button class="primary">{{ c.t.s("Save") }}</button>
+  </form>
+  <p class="muted">{{ c.t.s("An existing key is overwritten (name, description, default).") }}</p>
+  <p class="muted">{{ c.t.s("Members of the Keycloak group get the class automatically, in addition to the classes ticked per user. Group membership is refreshed at login.") }}</p>
+</div>
+<div class="card">
+  <h3>{{ c.t.s("Outbound routes") }}</h3>
+  <div class="tablewrap"><table>
+    <tr><th>{{ c.t.s("Priority") }}</th><th>{{ c.t.s("Name") }}</th><th>{{ c.t.s("Prefix") }}</th><th>{{ c.t.s("Length") }}</th><th>{{ c.t.s("Action") }}</th><th>{{ c.t.s("Class") }}</th><th></th></tr>
+    {% for r in routes %}
+    <tr><td>{{ r.priority }}</td><td><a href="/admin/routes/{{ r.id }}">{{ r.name }}</a></td><td><code>{{ r.match_prefix }}</code></td>
+      <td>{{ r.min_len }}–{% match r.max_len %}{% when Some with (m) %}{{ m }}{% when None %}∞{% endmatch %}</td>
+      <td>{{ r.action }}</td><td><code>{{ r.route_class }}</code></td>
+      <td>{% if r.route_class != "emergency" %}<form class="inline" method="post" action="/admin/routes/{{ r.id }}/delete" data-confirm="{{ c.t.s("Really delete?") }}"><button class="danger">{{ c.t.s("Delete") }}</button></form>{% endif %}</td></tr>
+    {% endfor %}
+  </table></div>
+  <p><a href="/admin/routes/new">+ {{ c.t.s("New route") }}</a></p>
+  <p class="muted">{{ c.t.s("The route with the lowest priority whose prefix and length match is used; longer prefixes win on equal priority. Numbers are normalised first (+<own country code>… → 0…, + → 00).") }}</p>
+</div>
+<div class="card" id="test">
+  <h3>{{ c.t.s("Test a number") }}</h3>
+  <form method="get" action="/admin/classes#test" class="row">
+    <input name="test" value="{{ test_number }}" placeholder="{{ c.t.s("dialled number, e.g. 0451 123456") }}" required maxlength="30">
+    <input name="caller" value="{{ test_caller }}" placeholder="{{ c.t.s("caller (extension, optional)") }}" inputmode="numeric" maxlength="4" class="short">
+    <button class="primary">{{ c.t.s("Test") }}</button>
+  </form>
+  {% if let Some(t) = test %}
+  <table class="form">
+    <tr><th>{{ c.t.s("Dialled") }}</th><td><code>{{ t.number }}</code></td></tr>
+    {% for s in t.steps %}<tr><th>{{ c.t.s(s.label) }}</th><td>{{ s.value }}</td></tr>{% endfor %}
+  </table>
+  <p class="{% if t.ok %}ok{% else %}off{% endif %}"><b>{{ t.verdict }}</b></p>
+  {% endif %}
+  <p class="muted">{{ c.t.s("Shows which way the dialplan would take: internal number, dial rule, trunk and, with a caller, the permission.") }}</p>
+</div>
+{% endblock %}

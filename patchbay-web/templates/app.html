@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}{{ a.name }}{% endblock %}
+{% block content %}
+<form method="post" action="/apps/{{ a.id }}" class="card">
+  <h2>{{ a.number }} · {{ a.name }} <span class="muted">({{ c.app_kind(a.kind) }}{% if a.company %} · {{ c.t.s("organization app") }}{% endif %})</span></h2>
+  <table class="form">
+    <tr><th>{{ c.t.s("Name") }}</th><td><input name="name" value="{{ a.name }}" required maxlength="40"></td></tr>
+    <tr><th>{{ c.t.s("Active") }}</th><td><label><input type="checkbox" name="enabled" {% if a.enabled %}checked{% endif %}> {{ c.t.s("active") }}</label></td></tr>
+    {% if a.kind == "conference" %}
+    <tr><th>PIN</th><td><input name="pin" value="{{ a.cfg("pin") }}" pattern="[0-9]{3,8}" inputmode="numeric" class="short"> <span class="muted">{{ c.t.s("optional, 3–8 digits") }}</span></td></tr>
+    <tr><th>{{ c.t.s("Moderator PIN") }}</th><td><input name="admin_pin" value="{{ a.cfg("admin_pin") }}" pattern="[0-9]{3,8}" inputmode="numeric" class="short"> <span class="muted">{{ c.t.s("optional; entered with *0 in the room (or instead of the room PIN); moderators can mute others and lock the room") }}</span></td></tr>
+    <tr><th>{{ c.t.s("Max. participants") }}</th><td><input name="max_members" type="number" min="2" max="50" value="{{ a.cfg("max_members") }}" class="short"></td></tr>
+    {% endif %}
+    {% if a.kind == "announcement" %}
+    <tr><th>{{ c.t.s("Repeats") }}</th><td><input name="repeat" type="number" min="1" max="10" value="{{ a.cfg("repeat") }}" class="short"></td></tr>
+    {% endif %}
+    {% if a.kind == "music" %}
+    <tr><th>{{ c.t.s("Order") }}</th><td><label><input type="checkbox" name="shuffle" {% if a.flag("shuffle") %}checked{% endif %}> {{ c.t.s("shuffle") }}</label></td></tr>
+    {% endif %}
+    {% if a.kind == "alias" %}
+    <tr><th>{{ c.t.s("Target") }}</th><td><input name="target" value="{{ a.cfg("target") }}" pattern="[1-9][0-9]{3}" inputmode="numeric" class="short" required> <span class="muted">{{ c.t.s("internal number (4 digits)") }}</span></td></tr>
+    {% endif %}
+    {% if a.kind == "group" %}
+    <tr><th>{{ c.t.s("Ring time") }}</th><td><input name="ring_s" type="number" min="10" max="120" value="{{ a.cfg("ring_s") }}" class="short"> s <span class="muted">{{ c.t.s("all members ring at the same time; then “nobody available”") }}</span></td></tr>
+    <tr><th>{{ c.t.s("Caller name prefix") }}</th><td><input name="prefix" value="{{ a.cfg("prefix") }}" maxlength="8" class="short"> <span class="muted">{{ c.t.s("optional, shown before the caller on the members' phones") }}</span></td></tr>
+    {% endif %}
+    {% if a.kind == "gateway" %}
+    <tr><th>PIN</th><td><input name="pin" value="{{ a.cfg("pin") }}" pattern="[0-9]{3,8}" inputmode="numeric" class="short" required> <span class="muted">{{ c.t.s("3–8 digits, asked first") }}</span></td></tr>
+    <tr><th>{{ c.t.s("Prefix") }}</th><td><input name="target" value="{{ a.cfg("target") }}" pattern="[0-9]{1,8}" inputmode="numeric" class="short" required> <span class="muted">{{ c.t.s("put before the number the caller enters, e.g. 78 for a site; the dial rule for it decides the trunk") }}</span></td></tr>
+    {% endif %}
+    {% if a.kind == "script" %}
+    <tr><th>{{ c.t.s("Script") }}</th><td>
+      <textarea name="source" class="code" rows="16" spellcheck="false" maxlength="20000" placeholder='let d = json(http_get("https://api.example.org/status"));&#10;say("The lab is " + if d.open { "open" } else { "closed" });'>{{ a.cfg("source") }}</textarea>
+      <details class="muted"><summary>{{ c.t.s("What a script can do") }}</summary>
+        <ul>
+          <li><code>say(text)</code>, <code>say(text, "de")</code> – {{ c.t.s("speak text (in the caller's language or the given one)") }}</li>
+          <li><code>http_get(url)</code> – {{ c.t.s("fetch a web page or API (GET, at most 3 per call, 5 s, 256 KB; internal networks only when the admin allows them)") }}</li>
+          <li><code>json(text)</code> – {{ c.t.s("read JSON into maps and arrays") }}</li>
+          <li><code>caller()</code>, <code>lang()</code> – {{ c.t.s("number of the caller, language (de/en)") }}</li>
+          <li><code>print(x)</code> – {{ c.t.s("write to the test log") }}</li>
+        </ul>
+        <p>{{ c.t.s("Language: Rhai (similar to JavaScript/Rust).") }} <a href="https://rhai.rs/book/" rel="noopener" target="_blank">rhai.rs/book</a></p>
+      </details>
+    </td></tr>
+    {% endif %}
+    {% if a.kind == "conference" || a.kind == "music" || a.kind == "announcement" %}
+    <tr><th>{% if a.kind == "conference" %}{{ c.t.s("Hold music (while alone)") }}{% else if a.kind == "music" %}{{ c.t.s("Playlist") }}{% else %}{{ c.t.s("Announcement") }}{% endif %}</th><td>
+      {% for m in media %}<label style="display:block"><input type="{% if a.kind == "announcement" %}radio{% else %}checkbox{% endif %}" name="media" value="{{ m.id }}" {% if m.selected %}checked{% endif %}> {{ m.name }}
+        <audio controls preload="none" src="/media/{{ m.id }}/preview"></audio></label>{% endfor %}
+      {% if media.is_empty() %}<span class="muted">{{ c.t.s("No media yet.") }}</span>{% endif %}
+      <p class="muted">{% if a.company %}<a href="/admin/sounds">{{ c.t.s("Audio") }}</a>{% else %}<a href="/media">{{ c.t.s("My media") }}</a>{% endif %} · {{ c.t.s("Without music the default hold music is used.") }}</p>
+    </td></tr>
+    {% endif %}
+  </table>
+  <p class="row"><button class="primary">{{ c.t.s("Save") }}</button> <a href="{% if a.company %}/admin/apps{% else %}/{% endif %}">{{ c.t.s("Cancel") }}</a></p>
+</form>
+{% if a.kind == "script" %}
+<div class="card" id="script-test">
+  <h3>{{ c.t.s("Test run") }}</h3>
+  <p class="muted">{{ c.t.s("Runs the saved script as if you called the app and shows what would be spoken – save first.") }}</p>
+  <button type="button" data-script-test="/apps/{{ a.id }}/test">{{ c.t.s("Run test") }}</button>
+  <pre class="script-out" hidden></pre>
+</div>
+{% endif %}
+{% if a.kind == "group" %}
+<div class="card" id="members">
+  <h3>{{ c.t.s("Members") }}</h3>
+  <p class="muted">{{ c.t.s("Their phones ring when someone calls") }} {{ a.number }}. {{ c.t.s("Members can leave the group on their start page; personal forwards do not apply.") }}</p>
+  {% if members.is_empty() %}<p class="muted">{{ c.t.s("No members yet.") }}</p>{% else %}
+  <table>{% for (mid, mext, mname) in members %}<tr><td>{{ mext }}</td><td>{{ mname }}</td>
+    <td><form class="inline" method="post" action="/apps/{{ a.id }}/members/{{ mid }}/delete"><button>{{ c.t.s("Remove") }}</button></form></td></tr>{% endfor %}</table>{% endif %}
+  <form method="post" action="/apps/{{ a.id }}/members" class="row" style="margin-top:8px">
+    <input name="extension" inputmode="numeric" pattern="[1-9][0-9]{3}" maxlength="4" class="short" placeholder="{{ c.t.s("Ext.") }}" required aria-label="{{ c.t.s("Extension") }}">
+    <button>{{ c.t.s("Add") }}</button>
+  </form>
+</div>
+{% endif %}
+<form method="post" action="/apps/{{ a.id }}/delete" data-confirm="{{ c.t.s("Really delete?") }}"><button class="danger">{{ c.t.s("Delete") }}</button></form>
+{% endblock %}

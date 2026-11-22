@@ -1,0 +1,189 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# PBX - Compose example: postgres, patchbay-web, asterisk. Put this file into a directory, write the env
+# file .env next to it (copy of deploy/pbx.env.example) and run `docker compose up -d`.
+# Nothing else is needed on the host: patchbay-web starts as root, creates missing secrets, directories
+# and permissions under ./pbx (patchbay-init), applies the database migrations and then drops to an
+# unprivileged user (patchbay-web/bin/patchbay-start.sh). Optional services (profiles):
+#   acme    certificate via Let's Encrypt DNS-01   docker compose --profile acme up -d
+#   backup  daily pg_dump into $PBX_DIR/backup      docker compose --profile backup up -d
+# (or COMPOSE_PROFILES=acme,backup in .env next to this file).
+#
+# Interpolated by Compose (shell environment or `.env` next to this file, not the env file):
+#   PBX_DIR           state directory: config, secrets, keys, media, voicemail … (default ./pbx,
+#                     relative to this file; e.g. /opt/pbx)
+#   PBX_POSTGRES_DIR  PostgreSQL data directory (default ./postgresql)
+#   PBX_VERSION       image tag (default latest)
+#   PBX_IMAGE_PREFIX  registry/namespace prefix incl. trailing slash, e.g. registry.example.com/pbx/
+#   PBX_ENV_FILE      env file loaded into the containers (default .env, the same file Compose reads
+#                     for these variables: one file for everything)
+# Optional site files such as theme.css go into $PBX_DIR/config (theme.css is picked up automatically).
+#
+# Order: patchbay-web writes the secrets -> postgres starts (waits for them) -> patchbay-web migrates and
+# becomes healthy -> asterisk. Layout of $PBX_DIR: config/ secrets/ keys/ media/ voicemail/
+# generated/ asterisk/ (astdb, logs) backup/ acme/.
+# A part of it elsewhere (big logs, media on a NAS …): mount it over the subdirectory, e.g. in
+# docker-compose.override.yml `- /mnt/nas/media:/state/media` for patchbay-web and asterisk, or
+# `- /mnt/disk/asterisk-log:/state/asterisk/log` for asterisk. Moving existing data is up to you.
+name: patchbay
+
+# Container logs (docker logs): json-file with rotation, so a chatty Asterisk console cannot fill the disk
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+services:
+  postgres:
+    # pinned minor release (Debian trixie variant, as the data directory was created with); update
+    # deliberately, a major upgrade needs pg_upgrade or dump/restore
+    image: postgres:17.12-trixie
+    network_mode: host
+    restart: unless-stopped
+    logging: *logging
+    # its password and pg_hba.conf are written by patchbay-web (patchbay-init) when it starts
+    entrypoint:
+      - sh
+      - -c
+      - 'until [ -f /run/pbx/pg_password ] && [ -f /run/pbx/pg_hba.conf ]; do echo "waiting for patchbay-web to create the secrets"; sleep 2; done; exec docker-entrypoint.sh "$$@"'
+      - --
+    # pg_hba.conf: passwords on TCP (the image's default trusts 127.0.0.1)
+    command: ["postgres", "-c", "listen_addresses=127.0.0.1", "-c", "port=5432", "-c", "hba_file=/run/pbx/pg_hba.conf"]
+    environment:
+      POSTGRES_DB: pbx
+      POSTGRES_USER: pbx
+      # used only when the data directory is created
+      POSTGRES_PASSWORD_FILE: /run/pbx/pg_password
+    # no init scripts: roles, schema and passwords come from patchbay-web's migrations
+    volumes:
+      - ${PBX_POSTGRES_DIR:-./postgresql}:/var/lib/postgresql/data
+      - ${PBX_DIR:-./pbx}/secrets/postgres:/run/pbx:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "pbx", "-d", "pbx"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  patchbay-web:
+    image: ${PBX_IMAGE_PREFIX:-}patchbay-web:${PBX_VERSION:-latest}
+    network_mode: host
+    restart: unless-stopped
+    logging: *logging
+    # starts as root for patchbay-init and the migrations, then runs as 65534 (patchbay-start.sh); healthy
+    # (image healthcheck) once it listens
+    user: "0:0"
+    # asterisk group (GID 999 in the Asterisk image): voicemail spool $PBX_DIR/voicemail is 2770 root:999
+    group_add: ["999"]
+    # Port 443 as non-root
+    cap_add: [NET_BIND_SERVICE]
+    # PBX_TLS, PBX_LISTEN, PBX_TRUSTED_PROXIES (reverse proxy) come from the env file
+    env_file: ${PBX_ENV_FILE:-.env}
+    volumes:
+      # everything (config, secrets, keys, media, voicemail, generated files) lives in $PBX_DIR
+      - ${PBX_DIR:-./pbx}:/state
+
+  asterisk:
+    image: ${PBX_IMAGE_PREFIX:-}patchbay-asterisk:${PBX_VERSION:-latest}
+    network_mode: host
+    restart: unless-stopped
+    logging: *logging
+    # patchbay-web is healthy once the database is migrated (Asterisk reads devices, groups … from it)
+    depends_on:
+      patchbay-web:
+        condition: service_healthy
+    env_file: ${PBX_ENV_FILE:-.env}
+    # configuration is in the image; the image's CMD links the paths into $PBX_DIR, renders the site
+    # files (ACL, transports, globals, credentials) into the tmpfs, then starts Asterisk as user asterisk
+    tmpfs:
+      - /etc/asterisk-site
+    volumes:
+      # like patchbay-web: secrets, keys, media, voicemail, generated files, astdb and logs ($PBX_DIR/asterisk)
+      - ${PBX_DIR:-./pbx}:/state
+
+  # Optional: Let's Encrypt certificate via DNS-01 (acme.sh). Issues the certificate for
+  # PBX_HOSTNAME once and installs it as $PBX_DIR/keys/voip.crt + voip.key; acme.sh's daemon renews
+  # it when due and reinstalls it. patchbay-web reloads its own copy hourly and restarts Asterisk when no
+  # call is active. Env file: ACME_DNS_PROVIDER (acme.sh DNS plugin, e.g. dns_hetzner) and
+  # ACME_DNS_TOKEN_VAR (the plugin's token variable, e.g. HETZNER_TOKEN); the token is the file
+  # $PBX_DIR/secrets/dns_api_token (acme.sh keeps it for the renewals). Plugins that read a key
+  # file instead of a token variable: leave ACME_DNS_TOKEN_VAR empty and point the plugin's own
+  # variable to /run/secrets/dns_api_token. Plugin variables: acme.sh wiki "dnsapi".
+  acme:
+    profiles: [acme]
+    image: neilpang/acme.sh:3.1.5
+    restart: unless-stopped
+    logging: *logging
+    depends_on:
+      patchbay-web:
+        condition: service_healthy
+    env_file: ${PBX_ENV_FILE:-.env}
+    entrypoint:
+      - sh
+      - -euc
+      - |
+        D=$$PBX_HOSTNAME
+        if [ ! -f "/acme.sh/$${D}_ecc/fullchain.cer" ]; then
+          # token plugins: the token in a variable; file plugins (nsupdate) point to the file themselves
+          [ -z "$${ACME_DNS_TOKEN_VAR:-}" ] || export "$$ACME_DNS_TOKEN_VAR=$$(cat /run/secrets/dns_api_token)"
+          acme.sh --issue --server letsencrypt --dns "$$ACME_DNS_PROVIDER" -d "$$D" --keylength ec-256 \
+            || { echo "acme: issuing failed, next try in an hour"; sleep 3600; exit 1; }
+        fi
+        acme.sh --install-cert -d "$$D" --ecc --key-file /keys/voip.key --fullchain-file /keys/voip.crt \
+          --reloadcmd "chown 65534:999 /keys/voip.key && chmod 640 /keys/voip.key"
+        exec /entry.sh daemon
+    volumes:
+      - ${PBX_DIR:-./pbx}/acme:/acme.sh
+      - ${PBX_DIR:-./pbx}/keys:/keys
+      # long syntax: a missing token file is an error instead of an empty directory created by Docker
+      - type: bind
+        source: ${PBX_DIR:-./pbx}/secrets/dns_api_token
+        target: /run/secrets/dns_api_token
+        read_only: true
+        bind:
+          create_host_path: false
+
+  # Optional: daily logical backup (pg_dump -Fc) into $PBX_DIR/backup, keeps PBX_BACKUP_KEEP dumps
+  # (default 14) at PBX_BACKUP_TIME (default 03:30, time zone PBX_TIMEZONE). Immediate dump:
+  #   docker compose run --rm backup now
+  # Restore: docker compose exec -T postgres pg_restore -U pbx -d pbx --clean --if-exists < $PBX_DIR/backup/<file>
+  backup:
+    profiles: [backup]
+    image: postgres:17.12-trixie
+    network_mode: host
+    restart: unless-stopped
+    logging: *logging
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: ${PBX_ENV_FILE:-.env}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        KEEP=$${PBX_BACKUP_KEEP:-14}; AT=$${PBX_BACKUP_TIME:-03:30}
+        case "$$KEEP" in ''|0*|*[!0-9]*) echo "PBX_BACKUP_KEEP must be a positive number" >&2; exit 1 ;; esac
+        export TZ="$${PBX_TIMEZONE:-$${TZ:-UTC}}" PGPASSWORD="$$(cat /run/pbx/pg_password)"
+        umask 077
+        dump() {
+          f=/backup/pbx-$$(date +%Y%m%d-%H%M%S).dump
+          if pg_dump -h 127.0.0.1 -p 5432 -U pbx -d pbx -Fc -f "$$f.tmp"; then
+            mv "$$f.tmp" "$$f"; echo "backup $$f ($$(du -h "$$f" | cut -f1))"
+            ls -1t /backup/pbx-*.dump | tail -n +$$((KEEP + 1)) | xargs -r rm -f --
+          else
+            rm -f "$$f.tmp"; echo "backup: pg_dump failed" >&2; return 1
+          fi
+        }
+        [ "$${1:-}" = now ] && { dump; exit; }
+        date -d "today $$AT" >/dev/null || { echo "PBX_BACKUP_TIME=$$AT: expected HH:MM" >&2; exit 1; }
+        while :; do
+          now=$$(date +%s); next=$$(date -d "today $$AT" +%s)
+          [ "$$next" -gt "$$now" ] || next=$$(date -d "tomorrow $$AT" +%s)
+          sleep $$((next - now))
+          dump || true
+        done
+      - backup
+    command: ["daily"]
+    volumes:
+      - ${PBX_DIR:-./pbx}/backup:/backup
+      - ${PBX_DIR:-./pbx}/secrets/postgres:/run/pbx:ro

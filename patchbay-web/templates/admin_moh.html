@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}{{ c.t.s("Hold music") }} · {{ p.name }}{% endblock %}
+{% block content %}
+{% include "admin_nav.html" %}
+<form method="post" action="/admin/moh/{{ p.id }}" class="card">
+  <h2>{{ c.t.s("Hold music") }} · {{ p.name }}{% if p.is_default %} <span class="ok">· {{ c.t.s("default hold music") }}</span>{% endif %}</h2>
+  <table class="form">
+    <tr><th>{{ c.t.s("Name") }}</th><td><input name="name" value="{{ p.name }}" maxlength="40" required></td></tr>
+    <tr><th>{{ c.t.s("Order") }}</th><td><label><input type="checkbox" name="shuffle" {% if p.shuffle %}checked{% endif %}> {{ c.t.s("shuffle") }}</label></td></tr>
+    <tr><th>{{ c.t.s("Tracks") }}</th><td>
+      {% for t in tracks %}<label style="display:block"><input type="checkbox" name="media" value="{{ t.id }}" {% if t.selected %}checked{% endif %}> {{ t.name }}
+        {% match t.duration_s %}{% when Some with (d) %}<span class="muted">({{ "{:.0}"|format(d) }} s)</span>{% when None %}{% endmatch %}
+        <audio controls preload="none" src="/admin/sounds/{{ t.id }}/preview"></audio></label>{% endfor %}
+      {% if tracks.is_empty() %}<span class="muted">{{ c.t.s("No audio files yet.") }}</span>{% endif %}
+      <p class="muted"><a href="/admin/sounds">{{ c.t.s("Upload more in the audio library.") }}</a></p>
+    </td></tr>
+  </table>
+  <p class="row"><button class="primary">{{ c.t.s("Save") }}</button> <a href="/admin/sounds#moh">{{ c.t.s("Cancel") }}</a></p>
+</form>
+{% if !p.is_default %}
+<form method="post" action="/admin/moh/{{ p.id }}/delete" data-confirm="{{ c.t.s("Really delete?") }}"><button class="danger">{{ c.t.s("Delete") }}</button></form>
+{% endif %}
+{% endblock %}

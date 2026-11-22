@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}{{ c.t.s("Blocklist") }}{% endblock %}
+{% block content %}
+{% include "admin_nav.html" %}
+{% if !msg.is_empty() %}<div class="card"><p>{{ msg }}</p></div>{% endif %}
+<div class="card">
+  <h2>{{ c.t.s("Blocklist") }}</h2>
+  <p class="muted">{{ c.t.s("Calls from these numbers (from outside, via a SIP trunk) are answered with “busy”; nobody's phone rings. A trailing * blocks a whole prefix, e.g. 0900* or +44*.") }}</p>
+  <form method="post" action="/admin/blocklist" class="row">
+    <input name="number" value="{{ number }}" placeholder="0451 123456 / +44*" required maxlength="30">
+    <input name="note" placeholder="{{ c.t.s("Note") }}" maxlength="200">
+    <button class="primary">{{ c.t.s("Block") }}</button>
+  </form>
+  <form method="post" action="/admin/blocklist/import" enctype="multipart/form-data" class="row" style="margin-top:12px">
+    <label>{{ c.t.s("Import CSV") }} <input type="file" name="file" accept=".csv,.txt,text/csv,text/plain" required></label>
+    <button>{{ c.t.s("Import") }}</button>
+    <span class="muted">{{ c.t.s("one number per line, optionally a note after ; or , (other lines are skipped)") }}</span>
+  </form>
+  <form method="post" action="/admin/blocklist/anonymous" class="row" style="margin-top:12px">
+    <label><input type="checkbox" name="block_anonymous" {% if block_anonymous %}checked{% endif %}> {{ c.t.s("Also block callers without a number (anonymous)") }}</label>
+    <button>{{ c.t.s("Save") }}</button>
+  </form>
+  <p class="muted">{{ c.t.s("Careful: doctors, authorities and some companies call anonymously.") }}</p>
+</div>
+<div class="card">
+  {% if entries.is_empty() %}<p class="muted">{{ c.t.s("No blocked numbers.") }}</p>{% else %}
+  <div class="tablewrap"><table>
+    <tr><th>{{ c.t.s("Number") }}</th><th>{{ c.t.s("Note") }}</th><th>{{ c.t.s("Blocked calls") }}</th><th>{{ c.t.s("Last") }}</th><th>{{ c.t.s("Added") }}</th><th></th></tr>
+    {% for e in entries %}<tr><td><code>{{ e.pattern }}</code></td><td>{{ e.note }}</td><td>{{ e.hits }}</td>
+      <td>{{ e.last_hit.clone().unwrap_or_default() }}</td><td class="muted">{{ e.created_at }} · {{ e.created_by }}</td>
+      <td><form class="inline" method="post" action="/admin/blocklist/{{ e.id }}/delete"><button class="danger">{{ c.t.s("Remove") }}</button></form></td></tr>{% endfor %}
+  </table></div>{% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,15 @@
+<nav class="subnav">
+  <a href="/admin" {% if c.section == "users" %}aria-current="page"{% endif %}>{{ c.t.s("Users") }}</a>
+  <a href="/admin/groups" {% if c.section == "groups" %}aria-current="page"{% endif %}>{{ c.t.s("Call groups") }}</a>
+  <a href="/admin/numbers" {% if c.section == "numbers" %}aria-current="page"{% endif %}>{{ c.t.s("Numbers") }}</a>
+  <a href="/admin/numberplan" {% if c.section == "numberplan" %}aria-current="page"{% endif %}>{{ c.t.s("Number plan") }}</a>
+  <a href="/admin/times" {% if c.section == "times" %}aria-current="page"{% endif %}>{{ c.t.s("Time profiles") }}</a>
+  <a href="/admin/ivrs" {% if c.section == "ivrs" %}aria-current="page"{% endif %}>{{ c.t.s("IVR") }}</a>
+  <a href="/admin/apps" {% if c.section == "apps" %}aria-current="page"{% endif %}>{{ c.t.s("Apps") }}</a>
+  <a href="/admin/sounds" {% if c.section == "sounds" %}aria-current="page"{% endif %}>{{ c.t.s("Audio") }}</a>
+  <a href="/admin/trunks" {% if c.section == "trunks" %}aria-current="page"{% endif %}>{{ c.t.s("Trunks") }}</a>
+  <a href="/admin/classes" {% if c.section == "classes" %}aria-current="page"{% endif %}>{{ c.t.s("Permissions & routes") }}</a>
+  <a href="/admin/blocklist" {% if c.section == "blocklist" %}aria-current="page"{% endif %}>{{ c.t.s("Blocklist") }}</a>
+  <a href="/admin/status" {% if c.section == "status" %}aria-current="page"{% endif %}>{{ c.t.s("Status") }}</a>
+  <a href="/admin/log" {% if c.section == "log" %}aria-current="page"{% endif %}>{{ c.t.s("Calls & audit") }}</a>
+</nav>

@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    
+    <clipPath id="inner-circle">
+      <circle cx="512" cy="512" r="416" />
+    </clipPath>
+
+    
+    <mask id="plug-cutout">
+      <rect width="1024" height="1024" fill="white" />
+      <g transform="translate(512,512) rotate(-45) translate(-512,-512)">
+        
+        <path d="M 62,485 C 142,515 212,515 288,512" fill="none" stroke="black" stroke-width="112" stroke-linecap="round" />
+        
+        <path d="M 272,482 L 330,438 L 542,438 L 542,472 L 750,472 L 784,450 L 838,486 L 838,538 L 784,574 L 750,552 L 542,552 L 542,586 L 330,586 L 272,542 Z" fill="black" stroke="black" stroke-width="76" stroke-linejoin="round" />
+      </g>
+    </mask>
+  </defs>
+
+  
+  <g mask="url(#plug-cutout)">
+    
+    <g clip-path="url(#inner-circle)">
+      <rect x="75" y="418" width="874" height="188" fill="#22526b" />
+      <rect x="75" y="418" width="874" height="24" fill="#0d2c3e" />
+      <rect x="75" y="582" width="874" height="24" fill="#0d2c3e" />
+
+      
+      <g transform="translate(152, 512)">
+        <circle r="48" fill="#0d2c3e" />
+        <circle r="29" fill="#bfe4e8" />
+        <circle r="17" fill="#0d2c3e" />
+      </g>
+      <g transform="translate(284, 512)">
+        <circle r="48" fill="#0d2c3e" />
+        <circle r="29" fill="#bfe4e8" />
+        <circle r="17" fill="#0d2c3e" />
+      </g>
+      <g transform="translate(740, 512)">
+        <circle r="48" fill="#0d2c3e" />
+        <circle r="29" fill="#bfe4e8" />
+        <circle r="17" fill="#0d2c3e" />
+      </g>
+      <g transform="translate(872, 512)">
+        <circle r="48" fill="#0d2c3e" />
+        <circle r="29" fill="#bfe4e8" />
+        <circle r="17" fill="#0d2c3e" />
+      </g>
+    </g>
+
+    
+    <path d="M 412,824 A 326,326 0 0,0 806,634" fill="none" stroke="#bfe4e8" stroke-width="24" stroke-linecap="round" />
+
+    
+    <circle cx="512" cy="512" r="416" fill="none" stroke="#169fb0" stroke-width="34" />
+  </g>
+
+  
+  <g transform="translate(656, 668)" stroke="#ef7b05" stroke-width="28" stroke-linecap="butt">
+    <line x1="0" y1="0" x2="0" y2="-62" />
+    <line x1="0" y1="0" x2="59" y2="-19.2" />
+    <line x1="0" y1="0" x2="36.4" y2="50.2" />
+    <line x1="0" y1="0" x2="-36.4" y2="50.2" />
+    <line x1="0" y1="0" x2="-59" y2="-19.2" />
+  </g>
+
+  
+  <g transform="translate(512,512) rotate(-45) translate(-512,-512)">
+    
+    <path d="M 62,485 C 142,515 212,515 288,512" fill="none" stroke="#0d2c3e" stroke-width="58" stroke-linecap="round" />
+    <path d="M 62,485 C 142,515 212,515 288,512" fill="none" stroke="#ef7b05" stroke-width="26" stroke-linecap="round" />
+
+    
+    <path d="M 272,482 L 330,438 L 542,438 L 542,586 L 330,586 L 272,542 Z" fill="#ef7b05" stroke="#0d2c3e" stroke-width="18" stroke-linejoin="round" />
+
+    
+    <path d="M 281,532 L 332,576 L 372,576 L 348,532 Z" fill="#d96800" />
+
+    
+    <path d="M 304,524 L 346,524" stroke="#0d2c3e" stroke-width="16" stroke-linecap="round" />
+
+    
+    <line x1="354" y1="464" x2="514" y2="464" stroke="#ffffff" stroke-width="11" stroke-linecap="round" />
+
+    
+    <rect x="542" y="476" width="128" height="72" fill="#ef7b05" stroke="#0d2c3e" stroke-width="16" />
+    <rect x="550" y="484" width="112" height="20" fill="#ffffff" />
+
+    
+    <rect x="670" y="476" width="22" height="72" fill="#0d2c3e" />
+
+    
+    <rect x="692" y="476" width="44" height="72" fill="#ef7b05" stroke="#0d2c3e" stroke-width="16" />
+    <rect x="700" y="484" width="28" height="20" fill="#ffffff" />
+
+    
+    <rect x="736" y="476" width="22" height="72" fill="#0d2c3e" />
+
+    
+    <path d="M 758,486 L 784,462 L 832,512 L 784,562 L 758,538 Z" fill="#ef7b05" stroke="#0d2c3e" stroke-width="16" stroke-linejoin="round" />
+    <polygon points="766,494 784,476 814,508 766,508" fill="#ffffff" />
+  </g>
+</svg>

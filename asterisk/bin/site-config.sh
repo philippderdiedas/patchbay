@@ -42,8 +42,9 @@ link "$ST/media" /media
 link "$ST/voicemail" /var/spool/pbx/vm
 link "$ST/asterisk/db" /var/lib/asterisk/db
 link "$ST/asterisk/log" /var/log/asterisk
-# run directory (astrundir /var/run/asterisk = /run/asterisk): created here, not in the image,
-# because image builders such as kaniko leave /var/run out of the image
+# run directory (astrundir /run/asterisk, asterisk.conf): created here, not in the image,
+# because image builders such as kaniko leave /var/run (even the link to /run) out of the image
+[ -e /var/run ] || ln -s /run /var/run
 install -d -o asterisk -g asterisk -m 755 /run/asterisk
 install -d -o root -g asterisk -m 750 /etc/asterisk-secrets
 for f in "$ST"/secrets/asterisk/*; do

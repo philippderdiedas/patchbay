@@ -47,14 +47,21 @@ COPY patchbay-web/bin/patchbay-init.sh /usr/local/bin/patchbay-init
 # unprivileged (see deploy/compose.yml); with arguments or as non-root it runs patchbay-web directly
 COPY patchbay-web/bin/patchbay-start.sh /usr/local/bin/patchbay-start
 RUN chmod 755 /usr/local/bin/patchbay-init /usr/local/bin/patchbay-start
-COPY --from=build /src/patchbay-web/target/release/patchbay-web /usr/local/bin/patchbay-web
-# port 443 without root (Compose grants NET_BIND_SERVICE)
-RUN setcap cap_net_bind_service=+ep /usr/local/bin/patchbay-web
-# last: the version changes on every build, the layers above stay cached
+# The version changes on every build. It comes BEFORE the binary on purpose: image builders with a
+# layer cache (kaniko) may not notice that a file copied from an earlier stage changed and would reuse
+# the cached `setcap` layer below, i.e. the previous binary. The layers above stay cached.
 ARG PBX_VERSION=dev
 LABEL org.opencontainers.image.title="patchbay-web" org.opencontainers.image.version="${PBX_VERSION}"
 # shown in the web UI footer (admins), the monitoring and the log (config::build_version)
 ENV PBX_BUILD=${PBX_VERSION}
+COPY --from=build /src/patchbay-web/target/release/patchbay-web /usr/local/bin/patchbay-web
+# port 443 without root (Compose grants NET_BIND_SERVICE)
+RUN setcap cap_net_bind_service=+ep /usr/local/bin/patchbay-web
+# the shipped binary must carry every migration (guards against a stale binary from any cache)
+# (the SQL files are kept in the image for reference; kaniko has no RUN --mount)
+COPY --from=build /src/db/migrations /usr/share/patchbay/migrations
+RUN for f in /usr/share/patchbay/migrations/*.sql; do grep -qF "$(basename "$f")" /usr/local/bin/patchbay-web \
+      || { echo "migration $f missing in the shipped binary" >&2; exit 1; }; done
 # Secret files (patchbay-start copies them to /run/patchbay-web), also for
 # `docker compose exec patchbay-web patchbay-web …` (set-password, mint-session); override the
 # variables to use other paths.

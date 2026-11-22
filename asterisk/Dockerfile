@@ -86,6 +86,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libvorbisenc2 libvorbisfile3 libgsm1 libpq5 curl sox tini asterisk-prompt-de \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --home /var/lib/asterisk --shell /usr/sbin/nologin asterisk
+# The version changes on every build. It comes BEFORE the copies from the build stages on purpose:
+# image builders with a layer cache (kaniko) may not notice that files copied from an earlier stage
+# changed and would reuse cached layers that touch them (the chown below). The layers above stay cached.
+ARG PBX_VERSION=dev
+ENV PBX_BUILD=${PBX_VERSION}
 COPY --from=build /out/ /
 # German system prompts from Debian (asterisk-prompt-de) under the Asterisk sounds path
 RUN ln -s /usr/share/asterisk/sounds/de /var/lib/asterisk/sounds/de
@@ -114,7 +119,6 @@ COPY bin/site-config.sh /usr/local/bin/site-config.sh
 RUN chmod 755 /usr/local/bin/site-config.sh && chmod -R a+rX,go-w /etc/asterisk /etc/odbc.ini
 
 ARG ASTERISK_VERSION
-ARG PBX_VERSION=dev
 LABEL org.opencontainers.image.title="patchbay-asterisk" \
       org.opencontainers.image.version="${PBX_VERSION}" \
       pbx.asterisk.version="${ASTERISK_VERSION}"

@@ -2,7 +2,7 @@
 {% block title %}{{ c.t.s("Log in") }}{% endblock %}
 {% block content %}
 <div class="card" style="max-width:460px;margin:40px auto">
-  <img class="login-logo" src="/static/logo.svg" alt="Patchbay" width="96" height="96">
+  <img class="login-logo" src="/static/logo" alt="" width="96" height="96">
   <h2>{{ c.t.s("Log in") }}</h2>
   {% if let Some(e) = error %}<p class="off" role="alert">{{ c.t.s(e) }}</p>{% endif %}
   {% if local %}

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+<link rel="icon" href="/static/logo">
 <link rel="icon" href="/static/icon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="/static/icon-180.png">
 <title>{% block title %}{{ c.t.s("Phone system") }}{% endblock %} · {{ c.site_title }}</title>
@@ -30,7 +30,7 @@
       data-msg-presence-dnd="{{ c.t.s("do not disturb") }}"
       data-msg-presence-offline="{{ c.t.s("offline") }}">
 <nav class="nav">
-  <a class="brand" href="/"><img class="brand-logo" src="/static/logo.svg" alt="" width="24" height="24"> {{ c.site_title }}</a>
+  <a class="brand" href="/"><img class="brand-logo" src="/static/logo" alt="" width="24" height="24"> {{ c.site_title }}</a>
   {% if !c.name.is_empty() %}<a href="/" {% if c.is_nav("home") %}aria-current="page"{% endif %}>{{ c.t.s("My phone") }}</a>
   <a href="/calls" {% if c.is_nav("calls") %}aria-current="page"{% endif %}>{{ c.t.s("Calls") }}</a>
   {% let hdr_unheard = c.unheard() %}<a href="/voicemail" {% if c.is_nav("voicemail") %}aria-current="page"{% endif %}>{{ c.t.s("Voicemail") }}{% if hdr_unheard > 0 %} <span class="badge" title="{{ c.t.s("New voicemails") }}: {{ hdr_unheard }}">{{ hdr_unheard }}<span class="vh"> {{ c.t.s("new") }}</span></span>{% endif %}</a>

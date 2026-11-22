@@ -394,5 +394,5 @@ textarea.code { font-family: var(--font-mono); font-size: 13px; max-width: none;
 footer.build { text-align: center; font-size: 0.75rem; margin: 24px 0 96px; }
 
 /* project logo: navigation and login page (a site theme can hide or replace it via .brand-logo/.login-logo) */
-.brand-logo { width: 24px; height: 24px; vertical-align: -6px; }
-.login-logo { display: block; width: 96px; height: 96px; margin: 0 auto 8px; }
+.brand-logo { width: 24px; height: 24px; vertical-align: -6px; object-fit: contain; }
+.login-logo { display: block; width: 96px; height: 96px; margin: 0 auto 8px; object-fit: contain; }

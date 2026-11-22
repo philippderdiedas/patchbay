@@ -41,7 +41,7 @@ link their paths into it):
 
 | Path | Owner, mode | Content |
 |---|---|---|
-| `config/` | operator | optional `theme.css` (loaded automatically; `PBX_THEME_CSS` only for another path or `off`) |
+| `config/` | operator | optional `theme.css`, `logo.svg`/`logo.png`, `icon-32.png`, `icon-180.png` (see Site and web interface) |
 | `secrets/` | root 700 | master secrets: `pg_password`, `pbxweb_db_pw`, `asterisk_db_pw`, `ami_pw`, `ari_pw`, `internal_key`; `dns_api_token` (placed by hand, only for `acme`) |
 | `secrets/postgres/` | root:999 750 | `pg_password` copy, `pg_hba.conf` → postgres, backup |
 | `secrets/migrate/` | 65534 700 | owner DSN, role password copies → migrations |
@@ -114,6 +114,18 @@ container kept running.
 ## Site and web interface (patchbay-web)
 
 Variables: [`deploy/pbx.env.example`](../deploy/pbx.env.example).
+
+**Look of a site** (files in `$PBX_DIR/config/`, picked up without a restart or a variable):
+
+| File | Replaces |
+|---|---|
+| `theme.css` | colours and styles (CSS variables of `static/base.css`); `PBX_THEME_CSS` only for another path or `off` |
+| `logo.svg` or `logo.png` | the logo in the navigation (24 px) and on the login page (96 px), and the favicon of current browsers |
+| `icon-32.png` | the favicon of older browsers and `/favicon.ico` |
+| `icon-180.png` | the home screen icon (iOS) |
+
+Missing files keep Patchbay's defaults. Site images are served with a sandboxing
+Content-Security-Policy, so an SVG cannot run script even when opened directly.
 
 ## CardDAV (phone books)
 

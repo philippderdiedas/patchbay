@@ -471,7 +471,7 @@ async fn main() -> Result<()> {
         .route("/prov/d/{token}", get(prov::device))
         .route("/static/base.css", get(ui::base_css))
         .route("/static/app.js", get(ui::app_js))
-        .route("/static/logo.svg", get(ui::logo_svg))
+        .route("/static/logo", get(ui::logo))
         .route("/static/icon-32.png", get(ui::icon_32))
         .route("/static/icon-180.png", get(ui::icon_180))
         .route("/favicon.ico", get(ui::icon_32))

@@ -169,16 +169,43 @@ pub async fn app_js() -> Response {
     asset("text/javascript; charset=utf-8", APP_JS.to_string())
 }
 
-pub async fn logo_svg() -> Response {
-    asset("image/svg+xml", LOGO_SVG.to_string())
+/// Site files that replace the project logo and icons: `/config/<name>` (= $PBX_DIR/config),
+/// read on every request (small files), so a site needs no restart and no variable.
+const SITE_DIR: &str = "/config";
+
+/// Serves a site file if present, else the embedded default. Site files come with a sandbox CSP:
+/// an SVG opened directly as a document cannot run script or reach the session.
+async fn site_or_default(names: &[(&str, &'static str)], default: (&'static str, &'static [u8])) -> Response {
+    for (name, ctype) in names {
+        if let Ok(body) = tokio::fs::read(format!("{SITE_DIR}/{name}")).await {
+            return (
+                [
+                    (header::CONTENT_TYPE, *ctype),
+                    (header::CACHE_CONTROL, "no-cache"),
+                    (header::CONTENT_SECURITY_POLICY, "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox"),
+                    (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+                ],
+                body,
+            )
+                .into_response();
+        }
+    }
+    ([(header::CONTENT_TYPE, default.0), (header::CACHE_CONTROL, "no-cache")], default.1).into_response()
 }
 
+/// Logo (navigation, login page, favicon): site `logo.svg` or `logo.png`, else Patchbay's.
+pub async fn logo() -> Response {
+    site_or_default(&[("logo.svg", "image/svg+xml"), ("logo.png", "image/png")], ("image/svg+xml", LOGO_SVG.as_bytes())).await
+}
+
+/// 32 px favicon (older browsers, /favicon.ico): site `icon-32.png`, else Patchbay's.
 pub async fn icon_32() -> Response {
-    ([(header::CONTENT_TYPE, "image/png"), (header::CACHE_CONTROL, "max-age=86400")], ICON_32).into_response()
+    site_or_default(&[("icon-32.png", "image/png")], ("image/png", ICON_32)).await
 }
 
+/// 180 px home screen icon (iOS): site `icon-180.png`, else Patchbay's.
 pub async fn icon_180() -> Response {
-    ([(header::CONTENT_TYPE, "image/png"), (header::CACHE_CONTROL, "max-age=86400")], ICON_180).into_response()
+    site_or_default(&[("icon-180.png", "image/png")], ("image/png", ICON_180)).await
 }
 
 /// Site theme (PBX_THEME_CSS), empty if the site has none.

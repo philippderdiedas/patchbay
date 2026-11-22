@@ -91,7 +91,7 @@ COPY --from=build /out/ /
 RUN ln -s /usr/share/asterisk/sounds/de /var/lib/asterisk/sounds/de
 COPY --from=tts /out/de/pbx-tts /usr/share/asterisk/sounds/de/pbx-tts
 RUN mkdir -p /etc/asterisk /var/spool/pbx/vm /var/lib/asterisk/db \
- && chown -R asterisk:asterisk /var/lib/asterisk /var/spool/asterisk /var/log/asterisk /var/run/asterisk /var/spool/pbx
+ && chown -R asterisk:asterisk /var/lib/asterisk /var/spool/asterisk /var/log/asterisk /var/spool/pbx
 COPY odbcinst.ini /etc/odbcinst.ini
 # the driver lives in the multiarch directory (x86_64-linux-gnu, aarch64-linux-gnu, ...)
 RUN drv=$(echo /usr/lib/*/odbc/psqlodbcw.so) && test -f "$drv" \

@@ -20,6 +20,9 @@ fn main() {
             n.bytes().all(|b| b.is_ascii_alphanumeric() || b"_.-".contains(&b)),
             "invalid migration file name {n}"
         );
+        // every file, not only the directory: a directory's mtime does not always change when a
+        // file is added (copied build contexts), and a stale list would ship without a migration
+        println!("cargo:rerun-if-changed={}", dir.join(n).display());
         let path = fs::canonicalize(dir.join(n)).unwrap();
         out += &format!("    ({n:?}, include_str!({:?})),\n", path.display().to_string());
     }

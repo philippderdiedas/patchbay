@@ -19,8 +19,13 @@ COPY patchbay-web/templates patchbay-web/templates
 COPY patchbay-web/static patchbay-web/static
 # touch: the copied sources can be older than the dummy build, cargo would keep the dummy binary.
 # The size check makes sure that never ships.
-RUN touch patchbay-web/src/main.rs patchbay-notify/src/lib.rs && cd patchbay-web && cargo build --release --locked \
-    && test "$(stat -c %s target/release/patchbay-web)" -gt 5000000
+# build.rs too: it embeds db/migrations, and its output from the cached dependency layer above must not
+# be reused. The loop checks that every migration file really is in the binary.
+RUN touch patchbay-web/src/main.rs patchbay-web/build.rs patchbay-notify/src/lib.rs && cd patchbay-web \
+    && cargo build --release --locked \
+    && test "$(stat -c %s target/release/patchbay-web)" -gt 5000000 \
+    && for f in ../db/migrations/*.sql; do grep -qF "$(basename "$f")" target/release/patchbay-web \
+         || { echo "migration $f missing in the binary" >&2; exit 1; }; done
 
 # Initial company hold music (Opsound, CC BY-SA, same files Asterisk ships): patchbay-web imports it into
 # the audio library on a new site (moh.rs), unless the site put its own files into media/moh-default.

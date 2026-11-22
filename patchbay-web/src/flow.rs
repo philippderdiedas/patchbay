@@ -117,7 +117,7 @@ fn write_node(o: &mut String, n: &Node, t: &Tr) {
 }
 
 /// "{}" placeholders filled in order (translated template first).
-fn tf(t: &Tr, key: &str, args: &[&dyn std::fmt::Display]) -> String {
+pub(crate) fn tf(t: &Tr, key: &str, args: &[&dyn std::fmt::Display]) -> String {
     let mut out = String::new();
     let mut rest = t.s(key);
     for a in args {
@@ -161,6 +161,11 @@ pub struct UserRow {
     no_answer_target: Option<i32>,
     /// numbers on the person's own blocklist
     blocked: i64,
+    /// outbound number (users.outbound_did_id) and the trunk it belongs to
+    out_e164: Option<String>,
+    out_trunk: Option<String>,
+    /// routetest::NEVER_SHOWN
+    out_never_shown: bool,
 }
 
 #[derive(FromRow, Clone, Default)]
@@ -269,10 +274,15 @@ impl Config {
         }
         for r in all::<UserRow>(
             db,
-            "SELECT id, extension, display_name, (enabled AND phone_allowed) AS active, dnd, ring_timeout_s,
-                    forward_immediate, no_answer_target,
-                    (SELECT count(*) FROM user_blocked_numbers b WHERE b.user_id = users.id) AS blocked
-             FROM users WHERE deleted_at IS NULL",
+            &format!(
+                "SELECT u.id, u.extension, u.display_name, (u.enabled AND u.phone_allowed) AS active, u.dnd, u.ring_timeout_s,
+                        u.forward_immediate, u.no_answer_target,
+                        (SELECT count(*) FROM user_blocked_numbers b WHERE b.user_id = u.id) AS blocked,
+                        d.e164 AS out_e164, t.name AS out_trunk, COALESCE({}, false) AS out_never_shown
+                 FROM users u LEFT JOIN dids d ON d.id = u.outbound_did_id LEFT JOIN trunks t ON t.id = d.trunk_id
+                 WHERE u.deleted_at IS NULL",
+                crate::routetest::NEVER_SHOWN
+            ),
         )
         .await?
         {
@@ -464,6 +474,13 @@ impl<'a> Walk<'a> {
             n = n.line(self.s("Not active (no phone permission): announcement “invalid”."));
             self.leave();
             return n;
+        }
+        // sub-outbound / route_trunk_order(): the trunk of the own number is tried first
+        if let (Some(e164), Some(trunk)) = (&u.out_e164, &u.out_trunk) {
+            n = n.line(tf(self.t, "Own calls out: preferably over {} with the number {} (where a dial rule lists it and shows the person's number).", &[trunk, e164]));
+            if u.out_never_shown {
+                n.live.push((true, tf(self.t, crate::routetest::NEVER_SHOWN_TEXT, &[e164, trunk])));
+            }
         }
         if u.blocked > 0 {
             n = n.line(tf(self.t, "Callers on the personal blocklist ({} numbers) hear busy.", &[&u.blocked]));
@@ -908,6 +925,22 @@ mod tests {
         assert!(s.contains("[app] App “Wartemusik”\n  Not active"), "{s}");
         let s = text(&did_flow(&c, &t, 2).unwrap());
         assert!(s.contains("[app] App “Wartemusik”\n  Not active"), "{s}");
+    }
+
+    #[test]
+    fn outbound_number_of_a_person() {
+        let mut c = cfg();
+        let u = c.users.get_mut(&1).unwrap();
+        u.out_e164 = Some("+494012345054".into());
+        u.out_trunk = Some("054".into());
+        u.out_never_shown = true;
+        c.numbers.insert(1018, ("person".into(), 1));
+        let t = Tr(Lang::En);
+        let s = text(&internal_flow(&c, &t, 1018).unwrap());
+        assert!(s.contains("Own calls out: preferably over 054 with the number +494012345054"), "{s}");
+        assert!(s.contains("! Outbound number +494012345054 belongs to trunk 054"), "{s}");
+        let s = text(&internal_flow(&c, &Tr(Lang::De), 1018).unwrap());
+        assert!(s.contains("über 054 mit der Nummer +494012345054"), "{s}");
     }
 
     #[test]

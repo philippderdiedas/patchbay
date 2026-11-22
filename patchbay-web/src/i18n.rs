@@ -969,6 +969,32 @@ fn de_pairs() -> Vec<(&'static str, &'static str)> {
         ("Prepend", "Voranstellen"),
         ("user's number, else route number", "Nummer des Teilnehmers, sonst der Route"),
         ("route number", "Nummer der Route"),
+        // Trunk order of a dial rule, trunks that show only their own numbers
+        (
+            "Tried in this order. With the caller ID “user's number”, the trunk that owns the caller's outbound number goes first (not for emergency calls). The next trunk is tried only when one could not take the call – unreachable, congested or at its call limit, before anything rang – never after ringing, busy, no answer, answer or a rejection of the number.",
+            "Werden in dieser Reihenfolge versucht. Mit der Rufnummer „Nummer des Teilnehmers“ kommt die Leitung zuerst, der die ausgehende Nummer des Anrufers gehört (nicht bei Notrufen). Die nächste Leitung wird nur versucht, wenn eine den Anruf nicht annehmen konnte – nicht erreichbar, überlastet oder alle Kanäle belegt, bevor es geklingelt hat –, nie nach Klingeln, besetzt, keiner Antwort, Annahme oder Ablehnung der Nummer.",
+        ),
+        ("trunk no.", "Leitung Nr."),
+        ("Shows only its own numbers", "Zeigt nur eigene Nummern"),
+        (
+            "Tick when the provider always shows this account's number and replaces any other caller ID. Then a person's outbound number goes out only over the trunk it belongs to (that trunk is tried first), other trunks send their own number.",
+            "Ankreuzen, wenn der Anbieter immer die Nummer dieses Kontos anzeigt und jede andere Rufnummer ersetzt. Dann geht die ausgehende Nummer einer Person nur über die Leitung hinaus, der sie gehört (diese Leitung wird zuerst versucht); andere Leitungen senden ihre eigene Nummer.",
+        ),
+        (
+            "External calls go out preferably over the trunk this number belongs to, if the dial rule lists it and shows the person's number.",
+            "Externe Anrufe gehen bevorzugt über die Leitung hinaus, der diese Nummer gehört, wenn die Wahlregel sie enthält und die Nummer der Person zeigt.",
+        ),
+        (
+            "Outbound number {} belongs to trunk {}, which shows only its own numbers, but that trunk is switched off or in no dial rule that dials out showing the person's number: the number is never shown.",
+            "Die ausgehende Nummer {} gehört zur Leitung {}, die nur eigene Nummern anzeigt, aber diese Leitung ist ausgeschaltet oder in keiner Wahlregel, die mit der Nummer der Person hinauswählt: Die Nummer wird nie angezeigt.",
+        ),
+        (
+            "Own calls out: preferably over {} with the number {} (where a dial rule lists it and shows the person's number).",
+            "Eigene Anrufe nach außen: bevorzugt über {} mit der Nummer {} (wo eine Wählregel sie enthält und die Nummer der Person zeigt).",
+        ),
+        ("Fallback", "Ausweichleitung"),
+        ("Skipped", "Übersprungen"),
+        ("Warning", "Warnung"),
         (
             "The route with the lowest priority whose prefix and length match is used; longer prefixes win on equal priority. Numbers are normalised first (+<own country code>… → 0…, + → 00).",
             "Es gilt die Route mit der kleinsten Priorität, deren Präfix und Länge passen; bei gleicher Priorität gewinnt das längere Präfix. Nummern werden vorher normalisiert (+<eigene Ländervorwahl>… → 0…, + → 00).",

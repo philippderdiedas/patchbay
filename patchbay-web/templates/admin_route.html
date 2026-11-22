@@ -13,8 +13,10 @@
       <option value="route" {% if r.action == "route" %}selected{% endif %}>{{ c.t.s("dial via trunk") }}</option>
       <option value="deny" {% if r.action == "deny" %}selected{% endif %}>{{ c.t.s("block") }}</option>
     </select></td></tr>
-    <tr><th>{{ c.t.s("Trunk") }}</th><td><select name="trunk_id"><option value="">–</option>
-      {% for tr in trunks %}<option value="{{ tr.id }}" {% if r.trunk_is(tr.id) %}selected{% endif %}>{{ tr.name }}</option>{% endfor %}</select></td></tr>
+    <tr><th>{{ c.t.s("Trunks") }}</th><td><div class="row">{% for pos in positions.clone() %}
+      <label>{{ pos + 1 }}. <select name="trunk_ids"><option value="">–</option>
+      {% for tr in trunks %}<option value="{{ tr.id }}" {% if r.trunk_at(pos, tr.id) %}selected{% endif %}>{{ tr.name }}</option>{% endfor %}</select></label>{% endfor %}</div>
+      <span class="muted">{{ c.t.s("Tried in this order. With the caller ID “user's number”, the trunk that owns the caller's outbound number goes first (not for emergency calls). The next trunk is tried only when one could not take the call – unreachable, congested or at its call limit, before anything rang – never after ringing, busy, no answer, answer or a rejection of the number.") }}</span></td></tr>
     <tr><th>{{ c.t.s("Strip digits") }}</th><td><input name="strip_digits" type="number" min="0" max="20" value="{{ r.strip_digits }}" class="short"></td></tr>
     <tr><th>{{ c.t.s("Prepend") }}</th><td><input name="prepend" value="{{ r.prepend }}" maxlength="10" pattern="[0-9+]*" class="short"></td></tr>
     <tr><th>{{ c.t.s("Caller ID") }}</th><td class="row"><select name="clip_mode">

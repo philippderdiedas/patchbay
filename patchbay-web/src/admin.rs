@@ -31,6 +31,11 @@ fn dialing() -> (&'static str, &'static [String]) {
     DIALING.get().map(|(c, e)| (c.as_str(), e.as_slice())).unwrap_or(("", &[]))
 }
 
+/// The site's country calling code (PBX_COUNTRY_CODE, e.g. "49"; empty when unset).
+pub fn country_code() -> &'static str {
+    dialing().0
+}
+
 /// A dialled number in the form the dial rules match on, exactly as [sub-outbound] in
 /// extensions.conf does it (keep both in sync); see `normalise_with`.
 pub fn normalise(raw: &str) -> String {
@@ -283,6 +288,8 @@ struct UserEditPage {
     c: Ctx,
     u: UserDetail,
     dids: Vec<DidOption>,
+    /// the outbound number can never be shown (routetest::NEVER_SHOWN)
+    out_warning: Option<String>,
     classes: Vec<RouteClass>,
     opts: TargetOptions,
     fwd: TargetSel,
@@ -319,10 +326,16 @@ pub async fn user_edit(State(app): State<AppState>, Admin(a): Admin, Path(id): P
     let classes = route_classes(&app.db).await?;
     let fwd = TargetSel::new("fwd_", u.fwd_kind.clone(), u.fwd_value.clone(), "off");
     let noans = TargetSel::new("noans_", u.noans_kind.clone(), u.noans_value.clone(), "“Not available” announcement");
+    let c = Ctx::new(&app, &a).section("users");
+    let out_warning = crate::routetest::outbound_number(&app.db, id)
+        .await?
+        .filter(|o| o.never_shown)
+        .map(|o| crate::routetest::never_shown_text(&o, &c.t));
     render(UserEditPage {
-        c: Ctx::new(&app, &a).section("users"),
+        c,
         u,
         dids,
+        out_warning,
         classes,
         opts: TargetOptions::load(&app.db).await?,
         fwd,
@@ -610,6 +623,8 @@ pub struct RouteRow {
     max_len: Option<i16>,
     action: String,
     route_class: String,
+    /// trunk names in the order they are tried ("A → B")
+    trunks: Option<String>,
 }
 
 #[derive(Template)]
@@ -642,8 +657,10 @@ pub async fn classes(
         Some(crate::routetest::evaluate(&app.db, &q.test, &q.caller).await?)
     };
     let routes = sqlx::query_as(
-        "SELECT id, priority, name, match_prefix, min_len, max_len, action::text AS action, route_class
-         FROM outbound_routes ORDER BY priority, match_prefix",
+        "SELECT r.id, r.priority, r.name, r.match_prefix, r.min_len, r.max_len, r.action::text AS action, r.route_class,
+                (SELECT string_agg(t.name, ' → ' ORDER BY rt.position) FROM route_trunks rt JOIN trunks t ON t.id = rt.trunk_id
+                 WHERE rt.route_id = r.id) AS trunks
+         FROM outbound_routes r ORDER BY r.priority, r.match_prefix",
 )
     .fetch_all(&app.db)
     .await
@@ -1363,7 +1380,19 @@ pub async fn log(State(app): State<AppState>, Admin(a): Admin) -> Result<Respons
 
 #[cfg(test)]
 mod tests {
-    use super::{normalise_with, to_e164_with, valid_caller_prefix};
+    use super::{MAX_ROUTE_TRUNKS, normalise_with, route_trunk_list, to_e164_with, valid_caller_prefix};
+
+    #[test]
+    fn route_trunks_from_the_form() {
+        let sel = |v: &[&str]| route_trunk_list(&v.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+        // form order, empty selects skipped (a gap does not leave a hole in the positions)
+        assert_eq!(sel(&["5", "", "4", "", ""]).ok(), Some(vec![5, 4]));
+        assert_eq!(sel(&["", "", "", "", ""]).ok(), Some(vec![]));
+        assert!(sel(&["5", "4", "5"]).is_err(), "a trunk twice");
+        assert!(sel(&["x"]).is_err());
+        let many: Vec<String> = (1..=MAX_ROUTE_TRUNKS as i32 + 1).map(|i| i.to_string()).collect();
+        assert!(route_trunk_list(&many).is_err());
+    }
 
     #[test]
     fn caller_prefixes() {
@@ -1441,7 +1470,8 @@ pub struct RouteEdit {
     min_len: i16,
     max_len: Option<i16>,
     action: String,
-    trunk_id: Option<i32>,
+    /// in the order they are tried (route_trunks.position)
+    trunk_ids: Vec<i32>,
     strip_digits: i16,
     prepend: String,
     clip_mode: String,
@@ -1449,9 +1479,13 @@ pub struct RouteEdit {
     route_class: String,
 }
 
+/// Trunks one dial rule can list (form: one select per position).
+pub const MAX_ROUTE_TRUNKS: usize = 5;
+
 impl RouteEdit {
-    fn trunk_is(&self, id: &i32) -> bool {
-        self.trunk_id == Some(*id)
+    /// Is trunk `id` the rule's trunk number `pos` (0-based)?
+    fn trunk_at(&self, pos: &usize, id: &i32) -> bool {
+        self.trunk_ids.get(*pos) == Some(id)
     }
     fn did_is(&self, id: &i32) -> bool {
         self.clip_did_id == Some(*id)
@@ -1470,12 +1504,21 @@ struct RoutePage {
     trunks: Vec<TrunkOption>,
     dids: Vec<DidOption>,
     classes: Vec<RouteClass>,
+    positions: std::ops::Range<usize>,
 }
 
 async fn route_page(app: &AppState, a: &crate::auth::CurrentUser, r: RouteEdit, is_new: bool) -> Result<Response, AppError> {
     let trunks = sqlx::query_as("SELECT id, name FROM trunks ORDER BY name").fetch_all(&app.db).await.map_err(anyhow::Error::from)?;
     let dids = sqlx::query_as("SELECT id, e164, label FROM dids ORDER BY e164").fetch_all(&app.db).await.map_err(anyhow::Error::from)?;
-    render(RoutePage { c: Ctx::new(app, a).section("classes"), r, is_new, trunks, dids, classes: route_classes(&app.db).await? })
+    render(RoutePage {
+        c: Ctx::new(app, a).section("classes"),
+        r,
+        is_new,
+        trunks,
+        dids,
+        classes: route_classes(&app.db).await?,
+        positions: 0..MAX_ROUTE_TRUNKS,
+    })
 }
 
 pub async fn route_new(State(app): State<AppState>, Admin(a): Admin) -> Result<Response, AppError> {
@@ -1485,8 +1528,9 @@ pub async fn route_new(State(app): State<AppState>, Admin(a): Admin) -> Result<R
 
 pub async fn route_edit(State(app): State<AppState>, Admin(a): Admin, Path(id): Path<i32>) -> Result<Response, AppError> {
     let r: RouteEdit = sqlx::query_as(
-        "SELECT id, priority, name, match_prefix, min_len, max_len, action::text AS action, trunk_id, strip_digits, prepend,
-                clip_mode::text AS clip_mode, clip_did_id, route_class FROM outbound_routes WHERE id = $1",
+        "SELECT id, priority, name, match_prefix, min_len, max_len, action::text AS action,
+                ARRAY(SELECT trunk_id FROM route_trunks WHERE route_id = r.id ORDER BY position) AS trunk_ids, strip_digits, prepend,
+                clip_mode::text AS clip_mode, clip_did_id, route_class FROM outbound_routes r WHERE id = $1",
 )
     .bind(id)
     .fetch_optional(&app.db)
@@ -1505,8 +1549,9 @@ pub struct RouteForm {
     #[serde(default)]
     max_len: String,
     action: String,
+    /// one value per position select, empty = unused
     #[serde(default)]
-    trunk_id: String,
+    trunk_ids: Vec<String>,
     strip_digits: i16,
     #[serde(default)]
     prepend: String,
@@ -1516,8 +1561,11 @@ pub struct RouteForm {
     route_class: String,
 }
 
-/// Validates a route form; returns (max_len, trunk_id, clip_did_id).
-fn check_route(f: &RouteForm) -> Result<(Option<i16>, Option<i32>, Option<i32>), AppError> {
+/// (max_len, trunk ids in order, clip_did_id) of a checked route form
+type CheckedRoute = (Option<i16>, Vec<i32>, Option<i32>);
+
+/// Validates a route form.
+fn check_route(f: &RouteForm) -> Result<CheckedRoute, AppError> {
     let prefix_ok = !f.match_prefix.is_empty()
         && f.match_prefix.len() <= 20
         && f.match_prefix.chars().enumerate().all(|(i, c)| c.is_ascii_digit() || (i == 0 && c == '+'));
@@ -1545,31 +1593,48 @@ fn check_route(f: &RouteForm) -> Result<(Option<i16>, Option<i32>, Option<i32>),
     if !["route", "deny"].contains(&f.action.as_str()) || !["user", "route"].contains(&f.clip_mode.as_str()) {
         return Err(AppError::BadRequest("Invalid action or caller ID mode.".into()));
     }
-    let trunk = f.trunk_id.parse::<i32>().ok();
-    if f.action == "route" && trunk.is_none() {
+    let trunks = route_trunk_list(&f.trunk_ids)?;
+    if f.action == "route" && trunks.is_empty() {
         return Err(AppError::BadRequest("A route with action “route” needs a trunk.".into()));
     }
-    Ok((max_len, trunk, f.clip_did_id.parse::<i32>().ok()))
+    Ok((max_len, trunks, f.clip_did_id.parse::<i32>().ok()))
+}
+
+/// The selected trunks in form order (empty selects skipped); each trunk at most once.
+fn route_trunk_list(sel: &[String]) -> Result<Vec<i32>, AppError> {
+    let mut out: Vec<i32> = vec![];
+    for v in sel.iter().map(|v| v.trim()).filter(|v| !v.is_empty()) {
+        let id: i32 = v.parse().map_err(|_| AppError::BadRequest("Invalid trunk.".into()))?;
+        if out.contains(&id) {
+            return Err(AppError::BadRequest("Each trunk can be listed only once per dial rule.".into()));
+        }
+        out.push(id);
+    }
+    if out.len() > MAX_ROUTE_TRUNKS {
+        return Err(AppError::BadRequest(format!("At most {MAX_ROUTE_TRUNKS} trunks per dial rule.")));
+    }
+    Ok(out)
 }
 
 pub async fn route_save(
     State(app): State<AppState>,
     Admin(a): Admin,
     Path(id): Path<String>,
-    Form(f): Form<RouteForm>,
+    MultiForm(f): MultiForm<RouteForm>,
 ) -> Result<Response, AppError> {
-    let (max_len, trunk, did) = check_route(&f)?;
-    let trunk = if f.action == "route" { trunk } else { None };
+    let (max_len, trunks, did) = check_route(&f)?;
+    let trunks = if f.action == "route" { trunks } else { vec![] };
     let sql = if id == "new" {
-        "INSERT INTO outbound_routes (priority, name, match_prefix, min_len, max_len, action, trunk_id, strip_digits, prepend,
+        "INSERT INTO outbound_routes (priority, name, match_prefix, min_len, max_len, action, strip_digits, prepend,
                                       clip_mode, clip_did_id, route_class)
-         VALUES ($2, $3, $4, $5, $6, $7::route_action, $8, $9, $10, $11::clip_mode, $12, $13) RETURNING id"
+         VALUES ($2, $3, $4, $5, $6, $7::route_action, $8, $9, $10::clip_mode, $11, $12) RETURNING id"
     } else {
         "UPDATE outbound_routes SET priority = $2, name = $3, match_prefix = $4, min_len = $5, max_len = $6,
-                action = $7::route_action, trunk_id = $8, strip_digits = $9, prepend = $10, clip_mode = $11::clip_mode,
-                clip_did_id = $12, route_class = $13
+                action = $7::route_action, strip_digits = $8, prepend = $9, clip_mode = $10::clip_mode,
+                clip_did_id = $11, route_class = $12
          WHERE id = $1 RETURNING id"
     };
+    let mut tx = app.db.begin().await.map_err(anyhow::Error::from)?;
     let rid: i32 = sqlx::query_scalar(sql)
         .bind(id.parse::<i32>().unwrap_or(0))
         .bind(f.priority)
@@ -1578,18 +1643,28 @@ pub async fn route_save(
         .bind(f.min_len)
         .bind(max_len)
         .bind(&f.action)
-        .bind(trunk)
         .bind(f.strip_digits)
         .bind(&f.prepend)
         .bind(&f.clip_mode)
         .bind(did)
         .bind(&f.route_class)
-        .fetch_optional(&app.db)
+        .fetch_optional(&mut *tx)
         .await
         .map_err(|e| AppError::BadRequest(format!("Saving failed: {e}")))?
         .ok_or(AppError::NotFound)?;
+    sqlx::query("DELETE FROM route_trunks WHERE route_id = $1").bind(rid).execute(&mut *tx).await.map_err(anyhow::Error::from)?;
+    sqlx::query(
+        "INSERT INTO route_trunks (route_id, position, trunk_id)
+         SELECT $1, x.pos::smallint, x.trunk_id FROM unnest($2::int[]) WITH ORDINALITY AS x(trunk_id, pos)",
+    )
+    .bind(rid)
+    .bind(&trunks)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| AppError::BadRequest(format!("Saving failed: {e}")))?;
+    tx.commit().await.map_err(anyhow::Error::from)?;
     db::audit(&app.db, &a.session.sub, "route.save", &format!("route-id:{rid}"),
-        serde_json::json!({"prefix": f.match_prefix, "action": f.action, "class": f.route_class})).await?;
+        serde_json::json!({"prefix": f.match_prefix, "action": f.action, "class": f.route_class, "trunks": trunks})).await?;
     Ok(Redirect::to("/admin/classes").into_response())
 }
 
@@ -1608,6 +1683,6 @@ pub async fn route_delete(State(app): State<AppState>, Admin(a): Admin, Path(id)
 }
 
 /// POST /admin/routes/new (see trunks::trunk_create)
-pub async fn route_create(state: State<AppState>, admin: Admin, form: Form<RouteForm>) -> Result<Response, AppError> {
+pub async fn route_create(state: State<AppState>, admin: Admin, form: MultiForm<RouteForm>) -> Result<Response, AppError> {
     route_save(state, admin, Path("new".to_string()), form).await
 }

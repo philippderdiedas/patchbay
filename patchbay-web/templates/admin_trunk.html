@@ -22,7 +22,9 @@
     <tr><th>{{ c.t.s("Codecs") }}</th><td class="row">{% for cd in codecs %}<label><input type="checkbox" name="codecs" value="{{ cd }}" {% if t.has_codec(cd) %}checked{% endif %}> {{ cd }}</label>{% endfor %}</td></tr>
     <tr><th>{{ c.t.s("Options") }}</th><td>
       <label style="display:block"><input type="checkbox" name="enabled" {% if t.enabled %}checked{% endif %}> {{ c.t.s("active") }}</label>
-      <label style="display:block"><input type="checkbox" name="media_encryption" value="sdes" {% if t.media_encryption == "sdes" %}checked{% endif %}> {{ c.t.s("SRTP (only with TLS)") }}</label></td></tr>
+      <label style="display:block"><input type="checkbox" name="media_encryption" value="sdes" {% if t.media_encryption == "sdes" %}checked{% endif %}> {{ c.t.s("SRTP (only with TLS)") }}</label>
+      <label style="display:block"><input type="checkbox" name="clip_own_only" {% if t.clip_own_only %}checked{% endif %}> {{ c.t.s("Shows only its own numbers") }}</label>
+      <span class="muted">{{ c.t.s("Tick when the provider always shows this account's number and replaces any other caller ID. Then a person's outbound number goes out only over the trunk it belongs to (that trunk is tried first), other trunks send their own number.") }}</span></td></tr>
     <tr><th>{{ c.t.s("Max. calls") }}</th><td><input name="max_channels" type="number" min="1" max="100" value="{{ t.max_str() }}" class="short"></td></tr>
     <tr><th>{{ c.t.s("Advanced") }}</th><td><details{% if !t.from_user_str().is_empty() || !t.from_domain_str().is_empty() || !t.proxy_str().is_empty() || !t.identify_str().is_empty() %} open{% endif %}>
       <summary>{{ c.t.s("From header, proxy, sources") }}</summary>
@@ -71,7 +73,7 @@
 <div class="card">
   <h3>{{ c.t.s("Dial rules") }}</h3>
   {% if dial_rules.is_empty() %}<p class="muted">{{ c.t.s("No dial rule uses this trunk yet.") }} <a href="/admin/routes/new">{{ c.t.s("Create dial rule") }}</a></p>
-  {% else %}<table>{% for r in dial_rules %}<tr><td><a href="/admin/routes/{{ r.0 }}">{{ r.1 }}</a></td><td><code>{{ r.2 }}</code></td><td><code>{{ r.3 }}</code></td></tr>{% endfor %}</table>{% endif %}
+  {% else %}<table>{% for r in dial_rules %}<tr><td><a href="/admin/routes/{{ r.0 }}">{{ r.1 }}</a></td><td><code>{{ r.2 }}</code></td><td><code>{{ r.3 }}</code></td><td class="muted">{{ c.t.s("trunk no.") }} {{ r.4 }}</td></tr>{% endfor %}</table>{% endif %}
   {% if t.inbound_mode == "did" %}<p class="muted">{{ c.t.s("Inbound: assign the trunk's numbers under") }} <a href="/admin/numbers">{{ c.t.s("Numbers") }}</a>.</p>{% endif %}
 </div>
 {% endif %}
@@ -85,7 +87,7 @@
     <span class="muted">{{ t.prefix_str() }} + ≥4 {{ c.t.s("digits, prefix stripped, class") }} <code>site{{ t.prefix_str() }}</code></span>
   </form>
   {% else %}
-  <table>{% for r in dial_rules %}<tr><td><a href="/admin/routes/{{ r.0 }}">{{ r.1 }}</a></td><td><code>{{ r.2 }}</code></td><td><code>{{ r.3 }}</code></td></tr>{% endfor %}</table>
+  <table>{% for r in dial_rules %}<tr><td><a href="/admin/routes/{{ r.0 }}">{{ r.1 }}</a></td><td><code>{{ r.2 }}</code></td><td><code>{{ r.3 }}</code></td><td class="muted">{{ c.t.s("trunk no.") }} {{ r.4 }}</td></tr>{% endfor %}</table>
   <p class="muted">{{ c.t.s("Users need the class to dial this site (Users → edit, or via a Keycloak group in Permissions & routes).") }}</p>
   {% endif %}
 </div>

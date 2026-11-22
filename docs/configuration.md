@@ -307,6 +307,37 @@ rule "internal, persons and groups"). In both modes the admin blocklist (Admin �
 checked first and answers busy; IAX connections are not checked. Codecs per SIP trunk: G.722, A-law, µ-law, Opus. A target
 (DID, inbound rule, forward) can be any app directly (target kind "App").
 
+### Example: several accounts at one provider (trunk by the caller's number)
+
+A dial rule (Admin → Permissions & routes) lists up to five trunks in the order they are tried. The
+next one is tried only when a trunk could not take the call – unreachable, congested or at its call
+limit, before anything rang – never after ringing, busy, no answer or a rejection of the number
+(details: [architecture](architecture.md#outbound-route-classes-and-dial-rules)). With caller ID
+"user's number, else route number" the trunk that owns the caller's outbound number (Admin →
+person → Caller ID; the number's trunk under Numbers) is tried first, if the rule lists it (not
+for emergency calls).
+
+Many providers show only the account's own number and replace any other caller ID. Mark such SIP
+trunks with **Shows only its own numbers** (Admin → Trunks → trunk → Options): a number of another
+trunk is then not sent over it; the rule's number is used if it belongs to that trunk, otherwise
+none (the provider shows its own).
+
+Three accounts `A`, `B`, `C` at one provider, each with its own number; one person has `A`'s number
+as outbound number, everyone else has none:
+
+1. Trunks `A`, `B`, `C` with **Shows only its own numbers**; numbers: each account's number on its trunk.
+2. The person: Caller ID = `A`'s number. The others: "Route default".
+3. Dial rule "External" (prefix `0`): trunks 1. `B`, 2. `A`; caller ID "user's number, else route
+   number" (route number empty or `B`'s number).
+
+The person calls out over `A` showing `A`'s number and, when `A` is unreachable, over `B` showing
+`B`'s; everyone else goes out over `B` and falls back to `A` (showing `A`'s number) when `B`
+cannot take the call. The emergency
+rule keeps its own trunks. The route tester (Permissions & routes, with a caller) shows the trunk
+order, why a trunk comes first and the caller ID per trunk. It, the person's page and the call flow
+warn when a person's number belongs to a trunk that shows only its own numbers but is switched off
+or in no dial rule that dials out showing the person's number (the number would never be shown).
+
 ### Example: ISDN bridge and passthrough trunks
 
 A second Asterisk that bridges ISDN (e.g. a payphone on a BRI) connects **like a phone**, not as a

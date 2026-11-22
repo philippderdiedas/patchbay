@@ -43,7 +43,9 @@
     <tr><th>{{ c.t.s("Caller ID") }}</th><td><select name="outbound_did_id">
       <option value="">{{ c.t.s("Route default") }}</option>
       {% for d in dids %}<option value="{{ d.id }}" {% if u.outbound_did_id == Some(d.id.clone()) %}selected{% endif %}>{{ d.e164 }} {{ d.label }}</option>{% endfor %}
-    </select></td></tr>
+    </select>
+      {% if let Some(w) = out_warning %}<p class="warn">{{ w }}</p>{% endif %}
+      <span class="muted">{{ c.t.s("External calls go out preferably over the trunk this number belongs to, if the dial rule lists it and shows the person's number.") }}</span></td></tr>
     <tr><th>{{ c.t.s("Forward immediately") }}</th><td>{% let ts = fwd.clone() %}{% include "target_select.html" %}</td></tr>
     <tr><th>{{ c.t.s("No answer") }}</th><td>{% let ts = noans.clone() %}{% include "target_select.html" %}</td></tr>
   </table>

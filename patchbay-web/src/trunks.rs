@@ -62,6 +62,8 @@ pub struct TrunkRow {
     media_encryption: String,
     codecs: Vec<String>,
     identify_match: Option<String>,
+    /// SIP: the provider shows only this trunk's own numbers (route_trunk_order() caller ID)
+    clip_own_only: bool,
 }
 
 fn o(s: &Option<String>) -> String {
@@ -121,7 +123,7 @@ impl TrunkRow {
 const TRUNK_SELECT: &str = "SELECT id, name, kind::text AS kind, asterisk_ref, enabled, managed, host, port,
         secret_enc IS NOT NULL AS has_secret, encryption, iax_trunk, calltoken, site_prefix, iax_username, route_classes, max_channels,
         inbound_mode::text AS inbound_mode, sip_transport, username, from_user, from_domain, outbound_proxy, media_encryption,
-        codecs, identify_match
+        codecs, identify_match, clip_own_only
     FROM trunks WHERE deleted_at IS NULL";
 
 // --- Config generation ----------------------------------------------------------------------
@@ -380,7 +382,8 @@ struct TrunkPage {
     opts: TargetOptions,
     newrule: TargetSel,
     kinds: [&'static str; 5],
-    dial_rules: Vec<(i32, String, String, String)>,
+    /// (route id, name, prefix, class, position of this trunk in the rule)
+    dial_rules: Vec<(i32, String, String, String, i16)>,
     codecs: &'static [&'static str],
 }
 
@@ -408,7 +411,8 @@ async fn page(app: &AppState, a: &crate::auth::CurrentUser, t: TrunkRow, is_new:
         .await
         .map_err(anyhow::Error::from)?;
     let dial_rules = sqlx::query_as(
-        "SELECT id, name, match_prefix, route_class FROM outbound_routes WHERE trunk_id = $1 ORDER BY priority",
+        "SELECT r.id, r.name, r.match_prefix, r.route_class, rt.position FROM outbound_routes r
+         JOIN route_trunks rt ON rt.route_id = r.id WHERE rt.trunk_id = $1 ORDER BY r.priority",
     )
     .bind(t.id)
     .fetch_all(&app.db)
@@ -462,6 +466,7 @@ pub async fn trunk_new(State(app): State<AppState>, Admin(a): Admin, axum::extra
         media_encryption: "no".into(),
         codecs: vec!["g722".into(), "alaw".into()],
         identify_match: None,
+        clip_own_only: false,
     };
     page(&app, &a, t, true).await
 }
@@ -517,6 +522,8 @@ pub struct TrunkForm {
     identify_match: String,
     #[serde(default)]
     inbound_mode: String,
+    #[serde(default)]
+    clip_own_only: Option<String>,
 }
 
 /// Values that end up in pjsip.conf: no whitespace, no comment or section characters.
@@ -584,14 +591,14 @@ async fn sip_save(app: &AppState, a: &crate::auth::CurrentUser, id: i32, is_new:
         "WITH n AS (SELECT nextval(pg_get_serial_sequence('trunks', 'id')) AS id)
          INSERT INTO trunks (id, asterisk_ref, name, kind, enabled, host, port, sip_transport, username, from_user, from_domain,
                              outbound_proxy, identify_match, media_encryption, inbound_mode, codecs, route_classes, max_channels,
-                             secret_enc, managed)
-         SELECT n.id, 'sip-' || n.id, $2, $3::trunk_kind, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::inbound_mode, $15, $16, $17, $18, true
+                             secret_enc, clip_own_only, managed)
+         SELECT n.id, 'sip-' || n.id, $2, $3::trunk_kind, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::inbound_mode, $15, $16, $17, $18, $19, true
          FROM n RETURNING id"
     } else {
         "UPDATE trunks SET name = $2, kind = $3::trunk_kind, enabled = $4, host = $5, port = $6, sip_transport = $7, username = $8,
                 from_user = $9, from_domain = $10, outbound_proxy = $11, identify_match = $12, media_encryption = $13,
                 inbound_mode = $14::inbound_mode, codecs = $15, route_classes = $16, max_channels = $17,
-                secret_enc = COALESCE($18, secret_enc)
+                secret_enc = COALESCE($18, secret_enc), clip_own_only = $19
          WHERE id = $1 RETURNING id"
     };
     let saved: i32 = sqlx::query_scalar(q)
@@ -613,6 +620,7 @@ async fn sip_save(app: &AppState, a: &crate::auth::CurrentUser, id: i32, is_new:
         .bind(&classes)
         .bind(max)
         .bind(&secret_enc)
+        .bind(f.clip_own_only.is_some())
         .fetch_one(&app.db)
         .await
         .map_err(|e| AppError::BadRequest(format!("Saving failed: {e}")))?;
@@ -621,7 +629,8 @@ async fn sip_save(app: &AppState, a: &crate::auth::CurrentUser, id: i32, is_new:
         &a.session.sub,
         if is_new { "trunk.add" } else { "trunk.edit" },
         &format!("trunk-id:{saved}"),
-        serde_json::json!({"kind": kind, "host": host, "transport": transport, "mode": mode, "classes": classes, "secret_changed": secret_enc.is_some()}),
+        serde_json::json!({"kind": kind, "host": host, "transport": transport, "mode": mode, "classes": classes,
+            "clip_own_only": f.clip_own_only.is_some(), "secret_changed": secret_enc.is_some()}),
     )
     .await?;
     if is_new && mode == "passthrough" {
@@ -793,16 +802,20 @@ pub async fn standard_route(State(app): State<AppState>, Admin(a): Admin, Path(i
     .execute(&app.db)
     .await
     .map_err(anyhow::Error::from)?;
-    let exists: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM outbound_routes WHERE trunk_id = $1 AND match_prefix = $2)")
-        .bind(id)
-        .bind(&prefix)
-        .fetch_one(&app.db)
-        .await
-        .map_err(anyhow::Error::from)?;
+    let exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM outbound_routes r JOIN route_trunks rt ON rt.route_id = r.id
+                        WHERE rt.trunk_id = $1 AND r.match_prefix = $2)",
+    )
+    .bind(id)
+    .bind(&prefix)
+    .fetch_one(&app.db)
+    .await
+    .map_err(anyhow::Error::from)?;
     if !exists {
         sqlx::query(
-            "INSERT INTO outbound_routes (priority, name, match_prefix, min_len, action, trunk_id, strip_digits, clip_mode, route_class)
-             VALUES (20, $1, $2, $3, 'route', $4, $5, 'route', $6)",
+            "WITH r AS (INSERT INTO outbound_routes (priority, name, match_prefix, min_len, action, strip_digits, clip_mode, route_class)
+                        VALUES (20, $1, $2, $3, 'route', $5, 'route', $6) RETURNING id)
+             INSERT INTO route_trunks (route_id, position, trunk_id) SELECT r.id, 1, $4 FROM r",
         )
         .bind(format!("Site {prefix} ({})", t.name))
         .bind(&prefix)
@@ -901,7 +914,7 @@ pub async fn trunk_delete(State(app): State<AppState>, Admin(a): Admin, Path(id)
     if !t.managed {
         return Err(AppError::BadRequest("This trunk is not managed in the web interface.".into()));
     }
-    let used: i64 = sqlx::query_scalar("SELECT count(*) FROM outbound_routes WHERE trunk_id = $1")
+    let used: i64 = sqlx::query_scalar("SELECT count(*) FROM route_trunks WHERE trunk_id = $1")
         .bind(id)
         .fetch_one(&app.db)
         .await

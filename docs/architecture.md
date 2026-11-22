@@ -143,11 +143,37 @@ then determines **whose permissions apply**, in this order:
    on every call, not only when it was saved. An external target set by an admin (forward, DID or
    IVR target) is allowed once for exactly that number (`PBX_ALLOW_EXTERNAL`).
 
-The first matching **dial rule** (`outbound_routes`: priority, prefix, length) gives `deny` or
-`route` with trunk, digits to strip/prepend, caller-ID mode (person's DID or the rule's) and a
-**route class**. The call goes out only if the class is among the caller's effective classes
-(`user_effective_classes` = own classes ∪ classes granted through an identity provider group).
-Empty classes deny. Each trunk has a channel limit against toll fraud.
+The first matching **dial rule** (`outbound_routes`: priority, prefix, length; SQL `route_for`)
+gives `deny` or `route` with up to five trunks in order (`route_trunks`), digits to strip/prepend,
+caller-ID mode (person's DID or the rule's) and a **route class**. The call goes out only if the
+class is among the caller's effective classes (`user_effective_classes` = own classes ∪ classes
+granted through an identity provider group). Empty classes deny. Each trunk has a channel limit
+against toll fraud.
+
+**Trunk selection by the caller's number.** SQL `route_trunk_order(rule, caller's outbound number)`
+gives the trunks one call tries and the caller ID for each (func_odbc `ROUTE` encodes them as
+`ref/kind/max/clip/clip trunk|…`; the route tester uses the same function):
+
+- Order: the rule's switched-on trunks in their order; the trunk that owns the caller's outbound
+  number (`users.outbound_did_id` → `dids.trunk_id`) moves to the front if the rule lists it and
+  shows the person's number (caller-ID mode `user`). Emergency rules keep their order. Callers
+  without an outbound number get the rule's order.
+- Caller ID: mode `user` = the person's number, else the rule's; `route` = the rule's. On a trunk
+  marked **shows only its own numbers** (`trunks.clip_own_only`, a provider that replaces any
+  caller ID with the account's number) a number of another trunk is not sent: the rule's number if
+  it belongs to that trunk, else none (the extension goes out, the provider shows its own). Other
+  trunks behave as before. As before only numbers of the own country are set (as `0…`).
+- `sub-outbound` tries the trunks in turn, each with its own checks: an IAX2 peer the call came in
+  on is skipped, the channel limit (`GROUP`) skips a full trunk, the caller ID is set per trunk.
+  **A callee never gets a second call:** the next trunk is tried only after a full trunk or a
+  `Dial` that ended `CHANUNAVAIL`/`CONGESTION` *before any ringing or progress* (`RINGTIME` and
+  `PROGRESSTIME` empty; Asterisk maps many final SIP answers, even after ringing, to
+  `CHANUNAVAIL`) and not for a reason of the number or callee: the Asterisk cause of the dialled
+  channel (`HANGUPCAUSE`, cleared before every attempt) in `PBX_FINAL_CAUSES` (1 unallocated
+  404/604, 17 busy 600, 19 480, 20, 21 rejected 403/603, 22 410, 28 484) ends the call. Busy, no
+  answer, answer and cancel always end it. Emergency calls ignore `PBX_FINAL_CAUSES` (a 403/404/484
+  often comes from the trunk itself: blocked account, refused caller ID, no emergency routing), only
+  ringing or progress ends them. All trunks full → busy; no usable trunk → denied.
 
 | Example rule | Action |
 |---|---|
@@ -156,6 +182,7 @@ Empty classes deny. Each trunk has a channel limit against toll fraud.
 | `0900`, `0137`, `118`, … | deny |
 | `00` | route to the provider, class `international` |
 | `0` | route to the provider, class `national`, caller ID of the person |
+| `0` (several accounts) | trunks `[B, A]`: persons whose number belongs to `A` go out over `A`, everyone else over `B`; each falls back to the other when it cannot take the call |
 
 ### Inbound
 
@@ -189,13 +216,14 @@ alias cannot widen what a trunk rule allows.
 ## 3. Data model
 
 The schema is `db/migrations/0001_initial.sql`; later changes come as numbered files, applied by
-`patchbay-web migrate` at every start (transaction per file, advisory lock, `schema_migrations`).
+`patchbay-web migrate` at every start (transaction per file, advisory lock, `schema_migrations`):
+`0002_route_trunks.sql` (trunk list per dial rule, `trunks.clip_own_only`).
 
 | Area | Tables |
 |---|---|
 | Persons and devices | `users` (`kind` person/function, extension, permissions, DND, forward, ring time, pickup group, languages), `devices` (one SIP account each), `local_logins`, `provisioning_tokens` |
 | Numbers | `numbers` (registry), `number_holds` (cool-down), `number_policy` |
-| Routing | `targets` (every "target" column points here), `groups`, `group_members`, `ivrs`, `ivr_options`, `time_profiles`, `time_rules`, `profile_closures`, `holidays`, `holiday_sources`, `trunks`, `dids`, `inbound_rules`, `trunk_inbound_rules`, `outbound_routes`, `route_classes`, `blocked_numbers` |
+| Routing | `targets` (every "target" column points here), `groups`, `group_members`, `ivrs`, `ivr_options`, `time_profiles`, `time_rules`, `profile_closures`, `holidays`, `holiday_sources`, `trunks`, `dids`, `inbound_rules`, `trunk_inbound_rules`, `outbound_routes`, `route_trunks` (a rule's trunks in order), `route_classes`, `blocked_numbers` |
 | Apps and media | `apps`, `app_media`, `app_members`, `custom_apps`, `sounds`, `moh_playlists`, `moh_media`, `greetings` |
 | Personal data | `contacts`, `dav_tokens`, `voicemails`, `call_notes`, `user_blocked_numbers`, `bot_*` |
 | Operation | `cdr`, `audit_log` (every write by patchbay-web), `settings` (site values the dialplan reads) |
@@ -220,7 +248,7 @@ from `callerid`. Views (devices only; trunks are generated files):
 
 Other views: `user_effective_classes`, `group_ringing_members` (logged-in members with a ringing
 device), `queue_rt`, `queue_members_rt`, `musiconhold`, `app_dialplan`, `app_group`. SQL functions
-used by the dialplan: `route_for`, `may_dial`, `time_profile_state`, `caller_blocked`,
+used by the dialplan: `route_for`, `route_trunk_order`, `may_dial`, `time_profile_state`, `caller_blocked`,
 `user_caller_blocked`, `contact_name`, `caller_e164`.
 
 **Database roles (least privilege)**
@@ -229,7 +257,7 @@ used by the dialplan: `route_for`, `may_dial`, `time_profile_state`, `caller_blo
 |---|---|---|
 | `pbx` | migrations | owner: DDL, creates the other roles, sets their passwords from secret files |
 | `pbxweb` | patchbay-web | data only (SELECT/INSERT/UPDATE/DELETE), no DDL |
-| `asterisk` | Asterisk (ODBC) | SELECT on the views and the routing tables it needs, column-level on `users` and `trunks` (never `secret_enc`), INSERT on `cdr`; no access to contacts, notes, voicemails, logins, bot or audit tables – personal data reaches the dialplan only through `SECURITY DEFINER` functions that return one value (`contact_name`, `user_caller_blocked`) |
+| `asterisk` | Asterisk (ODBC) | SELECT on the views and the routing tables it needs (incl. `route_trunks`; `route_for`/`route_trunk_order` run with its rights), column-level on `users` and `trunks` (never `secret_enc`), INSERT on `cdr`; no access to contacts, notes, voicemails, logins, bot or audit tables – personal data reaches the dialplan only through `SECURITY DEFINER` functions that return one value (`contact_name`, `user_caller_blocked`) |
 
 ## 4. Security model
 
@@ -238,7 +266,7 @@ used by the dialplan: `route_for`, `may_dial`, `time_profile_state`, `caller_blo
 | Permission checks | Fail closed everywhere: an ODBC lookup that returns nothing denies (an empty answer from an ambiguous query must never look like "allowed"). Rule for new checks: test the "empty/missing data" case. |
 | Blind transfers | Checked with the transferring person's classes, never the trunk's; same for transfers from the web widget (AMI `BlindTransfer` sets `BLINDTRANSFER` like a REFER). |
 | Forwards | Self-service forwards to external numbers are re-checked on every call; admin targets are a one-shot permission for exactly that number. |
-| Emergency calls | Always allowed from own devices, no channel limit, leading `0` corrected. If the database gives no rule, the dialplan dials `PBX_EMERGENCY_TRUNK`. **Control-centre callback:** the dialplan remembers trunk and caller (astdb `pbx_sos/<trunk>`); for 30 minutes any call arriving on that trunk in DID mode (and not on the admin blocklist) first rings the emergency caller's devices for 25 s (past DND and forwards, caller name "SOS …") – the control centre calls back from numbers we cannot know. |
+| Emergency calls | Always allowed from own devices, no channel limit, leading `0` corrected, the rule's trunk order (no preference by the caller's number). If the database gives no rule, or no trunk of the rule takes the call, the dialplan dials `PBX_EMERGENCY_TRUNK` (unless already tried). **Control-centre callback:** the dialplan remembers trunk and caller (astdb `pbx_sos/<trunk>`) for the trunk actually used and for the trunk that owns the number shown (the control centre calls that number back); an attempt that does not take the call puts the previous records back, unless a concurrent emergency call has written its own since; for 30 minutes any call arriving on that trunk in DID mode (and not on the admin blocklist) first rings the emergency caller's devices for 25 s (past DND and forwards, caller name "SOS …") – the control centre calls back from numbers we cannot know. |
 | PIN brute force | App PINs (dial-through, conference) are counted per app across calls in the astdb: the 5th wrong dial-through PIN in 15 minutes locks the app for 15 minutes (every PIN is then wrong, no hint to the caller). Conference rooms are never locked (anyone could lock colleagues out). Failures are logged, audited and exposed in monitoring; counting works without patchbay-web. Local web logins: 5 failures lock the login name (growing), 20 per IP lock the IP; unknown names cost the same time. |
 | Script apps | Rhai without modules or `eval`, limits on operations, sizes, call depth and 10 s run time; the only way out is `http_get` (GET, 3 per run, size and time limits, no redirects), with the address checked after DNS resolution and connected to directly; internal networks only when listed in `PBX_SCRIPT_HTTP_ALLOW`. Script apps are never part of the default user app kinds. |
 | Custom dialplan apps | Admins only; the `strict` guard (allowlist of applications, functions, jump targets) catches mistakes but is not a security boundary. |

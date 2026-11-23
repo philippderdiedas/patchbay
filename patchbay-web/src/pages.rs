@@ -163,7 +163,7 @@ pub async fn phonebook(State(app): State<AppState>, u: CurrentUser) -> Result<Re
         e.presence = presence(states.get(&e.extension.to_string()).map(String::as_str), e.dnd);
     }
     let contacts = match u.session.user_id {
-        Some(uid) => crate::contacts::contacts_of(&app.db, uid).await?,
+        Some(uid) => crate::contacts::contacts_of(&app.db, uid, app.cfg.shared_notes).await?,
         None => vec![],
     };
     let (tokens, extension) = match u.session.user_id {

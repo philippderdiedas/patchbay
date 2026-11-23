@@ -26,14 +26,14 @@ const MAX_PER_USER: i64 = 500;
 
 #[derive(Serialize, FromRow)]
 pub struct Note {
-    id: i32,
-    body: String,
+    pub id: i32,
+    pub body: String,
     /// visible to all colleagues (always false while PBX_SHARED_NOTES is off)
-    shared: bool,
+    pub shared: bool,
     /// written by the viewer: may edit and delete
-    mine: bool,
-    author: String,
-    at: String,
+    pub mine: bool,
+    pub author: String,
+    pub at: String,
 }
 
 /// Notes on a number the person may see: own ones and, while the site allows it, shared ones.
@@ -54,6 +54,32 @@ pub async fn notes_for(app: &AppState, uid: i32, e164: &str) -> Result<Vec<Note>
     .map_err(anyhow::Error::from)?)
 }
 
+/// Notes on the numbers of a contact (contact page): own ones and, while the site allows it, shared ones.
+pub async fn notes_for_numbers(app: &AppState, uid: i32, numbers: &[String]) -> Result<Vec<(String, Note)>, AppError> {
+    let rows: Vec<NumberNote> = sqlx::query_as(
+        "SELECT n.e164, n.id, n.body, n.shared AND $3 AS shared, n.user_id = $1 AS mine, u.display_name AS author,
+                to_char(n.updated_at AT TIME ZONE $4, 'DD.MM.YY HH24:MI') AS at
+         FROM call_notes n JOIN users u ON u.id = n.user_id
+         WHERE n.e164 = ANY($2) AND (n.user_id = $1 OR (n.shared AND $3))
+         ORDER BY n.updated_at DESC LIMIT 100",
+    )
+    .bind(uid)
+    .bind(numbers)
+    .bind(app.cfg.shared_notes)
+    .bind(&app.cfg.timezone)
+    .fetch_all(&app.db)
+    .await
+    .map_err(anyhow::Error::from)?;
+    Ok(rows.into_iter().map(|r| (r.e164, r.note)).collect())
+}
+
+#[derive(FromRow)]
+struct NumberNote {
+    e164: String,
+    #[sqlx(flatten)]
+    note: Note,
+}
+
 /// Note text: trimmed, no control characters except line breaks, 1–1000 characters.
 fn clean_body(s: &str) -> Option<String> {
     let b: String = s.trim().replace("\r\n", "\n").chars().filter(|c| *c == '\n' || !c.is_control()).collect();
@@ -64,15 +90,15 @@ fn clean_body(s: &str) -> Option<String> {
 pub struct NoteForm {
     /// new notes: the number (raw or E.164)
     #[serde(default)]
-    number: String,
-    body: String,
+    pub(crate) number: String,
+    pub(crate) body: String,
     /// "1": visible to all colleagues
     #[serde(default)]
-    shared: String,
+    pub(crate) shared: String,
 }
 
 /// Creates (id None) or changes an own note.
-async fn save(app: &AppState, u: &CurrentUser, uid: i32, id: Option<i32>, f: &NoteForm) -> Result<(), AppError> {
+pub(crate) async fn save(app: &AppState, u: &CurrentUser, uid: i32, id: Option<i32>, f: &NoteForm) -> Result<(), AppError> {
     let body = clean_body(&f.body).ok_or_else(|| AppError::BadRequest("Note: 1 to 1000 characters.".into()))?;
     let shared = app.cfg.shared_notes && f.shared == "1";
     let (nid, e164): (i32, String) = match id {

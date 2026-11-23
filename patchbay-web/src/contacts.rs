@@ -23,6 +23,9 @@ pub struct Contact {
     pub mobile: Option<String>,
     pub email: Option<String>,
     pub note: Option<String>,
+    /// call notes on the contact's numbers the viewer can see (phone book list)
+    #[sqlx(default)]
+    pub notes: i64,
 }
 
 impl Contact {
@@ -43,9 +46,14 @@ impl Contact {
     }
 }
 
-pub async fn contacts_of(db: &sqlx::PgPool, uid: i32) -> Result<Vec<Contact>, AppError> {
-    Ok(sqlx::query_as("SELECT id, name, organization, phone, mobile, email, note FROM contacts WHERE user_id = $1 ORDER BY lower(name)")
+pub async fn contacts_of(db: &sqlx::PgPool, uid: i32, shared_notes: bool) -> Result<Vec<Contact>, AppError> {
+    Ok(sqlx::query_as(
+        "SELECT c.id, c.name, c.organization, c.phone, c.mobile, c.email, c.note,
+                (SELECT count(*) FROM call_notes n WHERE n.e164 IN (c.phone_e164, c.mobile_e164) AND (n.user_id = $1 OR (n.shared AND $2))) AS notes
+         FROM contacts c WHERE c.user_id = $1 ORDER BY lower(c.name)",
+    )
         .bind(uid)
+        .bind(shared_notes)
         .fetch_all(db)
         .await
         .map_err(anyhow::Error::from)?)
@@ -57,6 +65,11 @@ struct ContactPage {
     c: Ctx,
     k: Contact,
     is_new: bool,
+    /// call notes on the contact's numbers: (number, note)
+    notes: Vec<(String, crate::notes::Note)>,
+    /// the contact's external numbers (E.164) for a new note
+    note_numbers: Vec<String>,
+    shared_notes: bool,
 }
 
 #[derive(Deserialize, Default)]
@@ -73,7 +86,7 @@ pub async fn contact_new(State(app): State<AppState>, u: CurrentUser, axum::extr
     let phone: String = p.phone.chars().filter(|c| c.is_ascii_digit() || *c == '+').take(20).collect();
     let name: String = p.name.chars().filter(|c| !c.is_control()).take(80).collect();
     let k = Contact { phone: Some(phone).filter(|s| !s.is_empty()), name, ..Default::default() };
-    render(ContactPage { c: Ctx::new(&app, &u), k, is_new: true })
+    render(ContactPage { c: Ctx::new(&app, &u), k, is_new: true, notes: vec![], note_numbers: vec![], shared_notes: false })
 }
 
 pub async fn contact_edit(State(app): State<AppState>, u: CurrentUser, Path(id): Path<i32>) -> Result<Response, AppError> {
@@ -85,7 +98,56 @@ pub async fn contact_edit(State(app): State<AppState>, u: CurrentUser, Path(id):
         .await
         .map_err(anyhow::Error::from)?
         .ok_or(AppError::NotFound)?;
-    render(ContactPage { c: Ctx::new(&app, &u), k, is_new: false })
+    let note_numbers = contact_numbers(&app.db, uid, id).await?;
+    let notes = crate::notes::notes_for_numbers(&app, uid, &note_numbers).await?;
+    render(ContactPage { c: Ctx::new(&app, &u), k, is_new: false, notes, note_numbers, shared_notes: app.cfg.shared_notes })
+}
+
+/// External numbers (E.164) of an own contact.
+async fn contact_numbers(db: &sqlx::PgPool, uid: i32, id: i32) -> Result<Vec<String>, AppError> {
+    let row: Option<(Option<String>, Option<String>)> = sqlx::query_as("SELECT phone_e164, mobile_e164 FROM contacts WHERE id = $1 AND user_id = $2")
+        .bind(id)
+        .bind(uid)
+        .fetch_optional(db)
+        .await
+        .map_err(anyhow::Error::from)?;
+    let (p, m) = row.ok_or(AppError::NotFound)?;
+    let mut v: Vec<String> = [p, m].into_iter().flatten().collect();
+    v.dedup();
+    Ok(v)
+}
+
+#[derive(Deserialize)]
+pub struct ContactNoteForm {
+    number: String,
+    body: String,
+    #[serde(default)]
+    shared: String,
+}
+
+/// POST /contacts/{id}/notes: new call note on one of the contact's numbers.
+pub async fn contact_note_create(State(app): State<AppState>, u: CurrentUser, Path(id): Path<i32>, Form(f): Form<ContactNoteForm>) -> Result<Response, AppError> {
+    let uid = u.phone_uid()?;
+    if !contact_numbers(&app.db, uid, id).await?.contains(&f.number) {
+        return Err(AppError::BadRequest("Notes only for the contact's external numbers.".into()));
+    }
+    let form = crate::notes::NoteForm { number: f.number, body: f.body, shared: f.shared };
+    crate::notes::save(&app, &u, uid, None, &form).await?;
+    Ok(Redirect::to(&format!("/contacts/{id}#notes")).into_response())
+}
+
+/// POST /contacts/{id}/notes/{note}/delete: own notes only.
+pub async fn contact_note_delete(State(app): State<AppState>, u: CurrentUser, Path((id, note)): Path<(i32, i32)>) -> Result<Response, AppError> {
+    let uid = u.phone_uid()?;
+    let e164: Option<String> = sqlx::query_scalar("DELETE FROM call_notes WHERE id = $1 AND user_id = $2 RETURNING e164")
+        .bind(note)
+        .bind(uid)
+        .fetch_optional(&app.db)
+        .await
+        .map_err(anyhow::Error::from)?;
+    let Some(e164) = e164 else { return Err(AppError::NotFound) };
+    crate::db::audit(&app.db, &u.session.sub, "note.delete", &format!("note:{note}"), serde_json::json!({"number": e164})).await?;
+    Ok(Redirect::to(&format!("/contacts/{id}#notes")).into_response())
 }
 
 #[derive(Deserialize)]

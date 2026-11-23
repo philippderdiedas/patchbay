@@ -731,9 +731,16 @@ fn de_pairs() -> Vec<(&'static str, &'static str)> {
             "Entfernt den Benutzer mit allen Geräten, eigenen Apps, Gruppenmitgliedschaften, Kontakten, App-Passwörtern und Voicemails. Die Durchwahl wird frei. Die Anrufdaten bleiben. Nicht möglich, solange der Benutzer irgendwo Anrufziel ist (Rufnummern, IVRs, Gruppen, Weiterleitungen).",
         ),
         ("Calls (last 500)", "Anrufe (letzte 500)"),
+        // call notes on the contact page
+        ("Call notes", "Anrufnotizen"),
+        ("Call notes belong to external numbers; this contact has none.", "Anrufnotizen gehören zu externen Nummern; dieser Kontakt hat keine."),
+        ("No notes yet.", "Noch keine Notizen."),
+        ("visible to all colleagues", "für alle Kolleg:innen sichtbar"),
+        ("New note", "Neue Notiz"),
+        ("The same notes appear in the call window when this number calls or is called.", "Dieselben Notizen erscheinen im Anruffenster, wenn diese Nummer anruft oder angerufen wird."),
+        ("Notes only for the contact's external numbers.", "Notizen nur zu den externen Nummern des Kontakts."),
         // call flow (admin call log, callflow.rs)
         ("One line per call: where it started, the number it came in on, the way through voice menus and groups, the trunk used (with the caller ID sent) and who answered (✓). Calls marked ° are reconstructed from the call records (no recorded flow): voice menus and groups are missing there.", "Eine Zeile pro Anruf: wo er begann, die Nummer, auf der er ankam, der Weg durch Sprachmenüs und Gruppen, die genutzte Leitung (mit der gesendeten Rufnummer) und wer angenommen hat (✓). Mit ° markierte Anrufe sind aus den Verbindungsdaten rekonstruiert (kein aufgezeichneter Ablauf): Sprachmenüs und Gruppen fehlen dort."),
-        ("Call flow", "Anrufverlauf"),
         ("reconstructed from the call records", "aus den Verbindungsdaten rekonstruiert"),
         ("shows", "zeigt"),
         ("number dialled", "gewählte Nummer"),

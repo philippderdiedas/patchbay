@@ -15,5 +15,28 @@
 </form>
 {% if !is_new %}
 <form method="post" action="/contacts/{{ k.id }}/delete" data-confirm="{{ c.t.s("Really delete?") }}"><button class="danger">{{ c.t.s("Delete") }}</button></form>
+<div class="card" id="notes">
+  <h3>{{ c.t.s("Call notes") }}</h3>
+  {% if note_numbers.is_empty() %}<p class="muted">{{ c.t.s("Call notes belong to external numbers; this contact has none.") }}</p>{% else %}
+  {% if notes.is_empty() %}<p class="muted">{{ c.t.s("No notes yet.") }}</p>{% endif %}
+  {% for (num, n) in notes %}
+  <div class="note">
+    <p class="muted"><small>{{ n.author }} · {{ n.at }} · {{ num }}{% if n.shared %} · {{ c.t.s("visible to all colleagues") }}{% endif %}</small></p>
+    <p class="pre">{{ n.body }}</p>
+    {% if n.mine %}<form class="inline" method="post" action="/contacts/{{ k.id }}/notes/{{ n.id }}/delete" data-confirm="{{ c.t.s("Delete this note?") }}"><button class="danger">{{ c.t.s("Delete") }}</button></form>{% endif %}
+  </div>
+  {% endfor %}
+  <form method="post" action="/contacts/{{ k.id }}/notes" class="stack">
+    <label>{{ c.t.s("New note") }} <textarea name="body" rows="3" maxlength="1000" required></textarea></label>
+    <div class="row">
+      {% if note_numbers.len() > 1 %}<select name="number" aria-label="{{ c.t.s("Number") }}">{% for n in note_numbers %}<option>{{ n }}</option>{% endfor %}</select>
+      {% else %}{% for n in note_numbers %}<input type="hidden" name="number" value="{{ n }}">{% endfor %}{% endif %}
+      {% if shared_notes %}<label><input type="checkbox" name="shared" value="1"> {{ c.t.s("visible to all colleagues") }}</label>{% endif %}
+      <button>{{ c.t.s("Add note") }}</button>
+    </div>
+  </form>
+  <p class="muted">{{ c.t.s("The same notes appear in the call window when this number calls or is called.") }}</p>
+  {% endif %}
+</div>
 {% endif %}
 {% endblock %}

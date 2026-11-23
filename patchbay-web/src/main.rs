@@ -351,6 +351,8 @@ async fn main() -> Result<()> {
         .route("/contacts/new", get(contacts::contact_new).post(contacts::contact_create))
         .route("/contacts/{id}", get(contacts::contact_edit).post(contacts::contact_save))
         .route("/contacts/{id}/delete", post(contacts::contact_delete))
+        .route("/contacts/{id}/notes", post(contacts::contact_note_create))
+        .route("/contacts/{id}/notes/{note}/delete", post(contacts::contact_note_delete))
         .route("/apps", post(apps::create))
         .route("/apps/{id}", get(apps::edit).post(apps::save))
         .route("/apps/{id}/delete", post(apps::delete))

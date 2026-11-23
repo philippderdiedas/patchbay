@@ -34,7 +34,7 @@
   <div class="tablewrap"><table>
     <tr><th>{{ c.t.s("Name") }}</th><th>{{ c.t.s("Company") }}</th><th>{{ c.t.s("Phone") }}</th><th>{{ c.t.s("Mobile") }}</th></tr>
     {% for k in contacts %}
-    <tr><td><a href="/contacts/{{ k.id }}">{{ k.name }}</a></td><td>{{ k.org() }}</td>
+    <tr><td><a href="/contacts/{{ k.id }}">{{ k.name }}</a>{% if k.notes > 0 %} <a class="muted" href="/contacts/{{ k.id }}#notes" title="{{ c.t.s("Call notes") }}">✎ {{ k.notes }}</a>{% endif %}</td><td>{{ k.org() }}</td>
       <td>{% if let Some(n) = k.phone %}{% let num = n.clone() %}{% include "dial.html" %}{% endif %}</td>
       <td>{% if let Some(n) = k.mobile %}{% let num = n.clone() %}{% include "dial.html" %}{% endif %}</td></tr>
     {% endfor %}

@@ -31,6 +31,15 @@ pub fn spawn(app: AppState) {
 }
 
 async fn retention(app: &AppState) -> Result<()> {
+    // bin of the shared phone book
+    let n = sqlx::query("DELETE FROM contacts WHERE user_id IS NULL AND deleted_at < now() - make_interval(days => $1)")
+        .bind(crate::contacts::BIN_DAYS)
+        .execute(&app.db)
+        .await?
+        .rows_affected();
+    if n > 0 {
+        tracing::info!("retention: {n} shared contacts removed from the bin");
+    }
     for (table, column, days) in [
         ("cdr", "calldate", app.cfg.retention_calls_days),
         ("call_flows", "started_at", app.cfg.retention_calls_days),

@@ -238,6 +238,7 @@ async fn main() -> Result<()> {
     admin::init_dialing(&cfg.country_code, &cfg.emergency_numbers);
     let recall = cfg.transfer_recall_s.to_string();
     let user_kinds = cfg.user_app_kinds.join(",");
+    let shared_contacts = cfg.shared_contacts.as_str().to_string();
     for (k, v) in [
         // also the site id for loop detection in the IAX network (path of site ids, PBX_PATH)
         ("sip_realm", &cfg.sip_realm),
@@ -247,6 +248,8 @@ async fn main() -> Result<()> {
         ("timezone", &cfg.timezone),
         // app kinds users may use (PBX_USER_APPS); the app_dialplan view drops other user apps
         ("user_app_kinds", &user_kinds),
+        // contact_name(): caller names from the shared phone book
+        ("shared_contacts", &shared_contacts),
     ] {
         sqlx::query("INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value")
             .bind(k)
@@ -352,6 +355,9 @@ async fn main() -> Result<()> {
         .route("/contacts/{id}", get(contacts::contact_edit).post(contacts::contact_save))
         .route("/contacts/{id}/delete", post(contacts::contact_delete))
         .route("/contacts/{id}/notes", post(contacts::contact_note_create))
+        .route("/contacts/{id}/share", post(contacts::contact_share))
+        .route("/contacts/{id}/copy", post(contacts::contact_copy))
+        .route("/contacts/{id}/restore", post(contacts::contact_restore))
         .route("/contacts/{id}/notes/{note}/delete", post(contacts::contact_note_delete))
         .route("/apps", post(apps::create))
         .route("/apps/{id}", get(apps::edit).post(apps::save))

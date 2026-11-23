@@ -139,6 +139,12 @@ struct PhonebookPage {
     entries: Vec<PhonebookEntry>,
     has_phone: bool,
     contacts: Vec<crate::contacts::Contact>,
+    /// shared phone book (PBX_SHARED_CONTACTS), its bin (admins) and whether the viewer edits it
+    shared_on: bool,
+    shared: Vec<crate::contacts::Contact>,
+    shared_edit: bool,
+    bin: Vec<crate::contacts::Contact>,
+    bin_days: i32,
     tokens: Vec<crate::contacts::DavToken>,
     dav_url: String,
     extension: String,
@@ -162,17 +168,32 @@ pub async fn phonebook(State(app): State<AppState>, u: CurrentUser) -> Result<Re
     for e in &mut entries {
         e.presence = presence(states.get(&e.extension.to_string()).map(String::as_str), e.dnd);
     }
-    let contacts = match u.session.user_id {
-        Some(uid) => crate::contacts::contacts_of(&app.db, uid, app.cfg.shared_notes, u.may_phone).await?,
-        None => vec![],
+    let (contacts, shared) = match u.session.user_id {
+        Some(uid) => (crate::contacts::contacts_of(&app, uid, u.may_phone).await?, crate::contacts::shared_contacts(&app, uid, u.may_phone).await?),
+        None => (vec![], vec![]),
     };
+    let bin = if u.is_admin && app.cfg.shared_contacts.on() { crate::contacts::shared_bin(&app).await? } else { vec![] };
     let (tokens, extension) = match u.session.user_id {
         Some(uid) => (crate::contacts::dav_tokens_of(&app.db, uid).await?, crate::contacts::dav_user(uid)),
         None => (vec![], String::new()),
     };
     let dav_url = format!("{}/carddav/", app.cfg.public_url.trim_end_matches('/'));
     let services = crate::help::services(&app, crate::i18n::Tr(u.lang)).await?;
-    render(PhonebookPage { c: Ctx::new(&app, &u), entries, has_phone: u.session.user_id.is_some(), contacts, tokens, dav_url, extension, services })
+    render(PhonebookPage {
+        c: Ctx::new(&app, &u),
+        entries,
+        has_phone: u.session.user_id.is_some(),
+        contacts,
+        shared_on: app.cfg.shared_contacts.on(),
+        shared,
+        shared_edit: app.cfg.shared_contacts.may_edit(u.is_admin),
+        bin,
+        bin_days: crate::contacts::BIN_DAYS,
+        tokens,
+        dav_url,
+        extension,
+        services,
+    })
 }
 
 /// Simplified line state for the phone book: available, ringing, busy, dnd, offline.

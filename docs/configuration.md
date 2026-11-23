@@ -150,6 +150,15 @@ changes, so clients sync incrementally. The feature-code list lives in `patchbay
 (`FEATURE_CODES`) and drives both the help page and this address book. Feature codes only work
 from the user's own device (the dialplan identifies the caller by its SIP endpoint).
 
+The **shared phone book** (`PBX_SHARED_CONTACTS=off|read|write`, default off) is a fourth book,
+`/carddav/shared/`, for contacts everyone with phone access should have (suppliers, customers,
+service numbers outside the PBX). `read`: everyone sees it, only admins create, change and delete
+entries (web UI). `write`: everyone with phone access edits it, in the web UI and over CardDAV with an
+app password. Each entry shows who created and last changed it; changes are in the audit log. Deleting
+moves an entry to a bin for 30 days, where admins restore it (phone book page); housekeeping removes it
+afterwards. Own contacts can be moved there, shared ones copied to the own contacts. Caller names use
+the person's own contacts first, then the shared phone book. It is also part of `/carddav/book/`.
+
 Force a resync on all clients (e.g. a Linphone that keeps an empty list): change the setting
 `carddav_epoch`, e.g. `INSERT INTO settings VALUES ('carddav_epoch', now()::text) ON CONFLICT (key) DO
 UPDATE SET value = EXCLUDED.value;`. All collection tags (ctag) change; clients compare the etags again and

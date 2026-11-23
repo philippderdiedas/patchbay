@@ -42,6 +42,38 @@
   <p class="muted">{{ c.t.s("Only you can see your contacts.") }}</p>{% endif %}
   <p><a href="/contacts/new">+ {{ c.t.s("New contact") }}</a></p>
 </div>
+{% if shared_on %}
+<div class="card noprint" id="shared">
+  <h2>{{ c.t.s("Shared phone book") }}</h2>
+  {% if shared.is_empty() %}<p class="muted">{{ c.t.s("No entries yet.") }}</p>{% else %}
+  <div class="tablewrap"><table class="stacked">
+    <tr><th>{{ c.t.s("Name") }}</th><th>{{ c.t.s("Company") }}</th><th>{{ c.t.s("Phone") }}</th><th>{{ c.t.s("Mobile") }}</th><th>{{ c.t.s("Last change") }}</th></tr>
+    {% for k in shared %}
+    <tr><td data-label="{{ c.t.s("Name") }}"><a href="/contacts/{{ k.id }}">{{ k.name }}</a>{% if k.notes > 0 %} <a class="muted" href="/contacts/{{ k.id }}#notes" title="{{ c.t.s("Call notes") }}">✎ {{ k.notes }}</a>{% endif %}</td>
+      <td data-label="{{ c.t.s("Company") }}">{{ k.org() }}</td>
+      <td data-label="{{ c.t.s("Phone") }}">{% if let Some(n) = k.phone %}{% let num = n.clone() %}{% include "dial.html" %}{% endif %}</td>
+      <td data-label="{{ c.t.s("Mobile") }}">{% if let Some(n) = k.mobile %}{% let num = n.clone() %}{% include "dial.html" %}{% endif %}</td>
+      <td data-label="{{ c.t.s("Last change") }}" class="muted"><small>{% if let Some(w) = k.updated %}{{ w }}{% endif %}</small></td></tr>
+    {% endfor %}
+  </table></div>{% endif %}
+  <p class="muted">{% if shared_edit %}{{ c.t.s("Everyone with phone access sees these entries and names of callers from them. Deleted entries can be restored by an admin for 30 days.") }}{% else %}{{ c.t.s("Everyone with phone access sees these entries; only admins change them.") }}{% endif %}</p>
+  {% if shared_edit %}<p><a href="/contacts/new?scope=shared">+ {{ c.t.s("New shared contact") }}</a></p>{% endif %}
+</div>
+{% if !bin.is_empty() %}
+<div class="card noprint" id="bin">
+  <h3>{{ c.t.s("Bin of the shared phone book") }}</h3>
+  <div class="tablewrap"><table class="stacked">
+    <tr><th>{{ c.t.s("Name") }}</th><th>{{ c.t.s("Company") }}</th><th>{{ c.t.s("Deleted") }}</th><th></th></tr>
+    {% for k in bin %}
+    <tr><td data-label="{{ c.t.s("Name") }}">{{ k.name }}</td><td data-label="{{ c.t.s("Company") }}">{{ k.org() }}</td>
+      <td data-label="{{ c.t.s("Deleted") }}" class="muted"><small>{% if let Some(w) = k.deleted %}{{ w }}{% endif %}</small></td>
+      <td><form class="inline" method="post" action="/contacts/{{ k.id }}/restore"><button>{{ c.t.s("Restore") }}</button></form></td></tr>
+    {% endfor %}
+  </table></div>
+  <p class="muted">{{ c.t.s("Entries are removed for good") }} {{ bin_days }} {{ c.t.s("days after deletion.") }}</p>
+</div>
+{% endif %}
+{% endif %}
 <div class="card noprint" id="carddav">
   <h2>{{ c.t.s("Contacts on other devices (CardDAV)") }}</h2>
   <p>{{ c.t.s("Sync the phone book and your contacts with the contacts app on your phone or computer (iPhone, Mac, DAVx⁵ on Android, Thunderbird). Contacts you add or change there show up here, and the other way round. Colleagues are read-only.") }}</p>
@@ -82,6 +114,7 @@
     <tr><th>{{ c.t.s("Address book") }}</th><th>{{ c.t.s("Address") }}</th><th></th></tr>
     <tr><td>{{ c.t.s("Colleagues") }}</td><td><code>{{ dav_url }}colleagues/</code></td><td class="muted">{{ c.t.s("read-only") }}</td></tr>
     <tr><td>{{ c.t.s("My contacts") }}</td><td><code>{{ dav_url }}contacts/</code></td><td class="muted">{{ c.t.s("read-write") }}</td></tr>
+    {% if shared_on %}<tr><td>{{ c.t.s("Shared phone book") }}</td><td><code>{{ dav_url }}shared/</code></td><td class="muted">{% if shared_edit %}{{ c.t.s("read-write") }}{% else %}{{ c.t.s("read-only") }}{% endif %}</td></tr>{% endif %}
     <tr><td>{{ c.t.s("Services") }}</td><td><code>{{ dav_url }}services/</code></td><td class="muted">{{ c.t.s("read-only") }}</td></tr>
     <tr><td>{{ c.t.s("All combined") }}</td><td><code>{{ dav_url }}book/</code></td><td class="muted">{{ c.t.s("read-only, e.g. FRITZ!Box") }}</td></tr>
   </table></div>

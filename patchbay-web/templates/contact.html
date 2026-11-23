@@ -2,8 +2,14 @@
 {% block title %}{% if is_new %}{{ c.t.s("New contact") }}{% else %}{{ k.name }}{% endif %}{% endblock %}
 {% block content %}
 <form method="post" action="/contacts/{% if is_new %}new{% else %}{{ k.id }}{% endif %}" class="card">
-  <h2>{% if is_new %}{{ c.t.s("New contact") }}{% else %}{{ k.name }}{% endif %}</h2>
+  <h2>{% if is_new %}{{ c.t.s("New contact") }}{% else %}{{ k.name }}{% endif %}{% if k.shared && !is_new %} <span class="muted">· {{ c.t.s("Shared phone book") }}</span>{% endif %}</h2>
+  {% if k.shared && !is_new %}<p class="muted"><small>{% if let Some(w) = k.created %}{{ c.t.s("Created by") }} {{ w }}{% endif %}{% if let Some(w) = k.updated %} · {{ c.t.s("last changed by") }} {{ w }}{% endif %}</small></p>{% endif %}
+  {% if !editable %}<p class="muted">{{ c.t.s("Only admins change the shared phone book.") }}</p>{% endif %}
+  <fieldset{% if !editable %} disabled{% endif %} class="plain">
   <table class="form">
+    {% if is_new && offer_shared %}<tr><th>{{ c.t.s("Save in") }}</th><td><select name="scope">
+      <option value="personal"{% if !k.shared %} selected{% endif %}>{{ c.t.s("My contacts (only me)") }}</option>
+      <option value="shared"{% if k.shared %} selected{% endif %}>{{ c.t.s("Shared phone book (everyone)") }}</option></select></td></tr>{% endif %}
     <tr><th>{{ c.t.s("Name") }}</th><td><input name="name" value="{{ k.name }}" required maxlength="80" autofocus></td></tr>
     <tr><th>{{ c.t.s("Company") }}</th><td><input name="organization" value="{{ k.org() }}" maxlength="80"></td></tr>
     <tr><th>{{ c.t.s("Phone") }}</th><td><input name="phone" value="{{ k.phone_str() }}" type="tel" maxlength="40" placeholder="040 123456"></td></tr>
@@ -11,10 +17,15 @@
     <tr><th>{{ c.t.s("E-mail") }}</th><td><input name="email" value="{{ k.email_str() }}" type="email" maxlength="120"></td></tr>
     <tr><th>{{ c.t.s("Note") }}</th><td><textarea name="note" rows="2" maxlength="500">{{ k.note_str() }}</textarea></td></tr>
   </table>
-  <p class="row"><button class="primary">{{ c.t.s("Save") }}</button> <a href="/phonebook#contacts">{{ c.t.s("Cancel") }}</a></p>
+  {% if editable %}<p class="row"><button class="primary">{{ c.t.s("Save") }}</button> <a href="/phonebook#{% if k.shared %}shared{% else %}contacts{% endif %}">{{ c.t.s("Cancel") }}</a></p>{% endif %}
+  </fieldset>
 </form>
 {% if !is_new %}
-<form method="post" action="/contacts/{{ k.id }}/delete" data-confirm="{{ c.t.s("Really delete?") }}"><button class="danger">{{ c.t.s("Delete") }}</button></form>
+<div class="row">
+  {% if editable %}<form class="inline" method="post" action="/contacts/{{ k.id }}/delete" data-confirm="{% if k.shared %}{{ c.t.s("Delete for everyone? An admin can restore it for 30 days.") }}{% else %}{{ c.t.s("Really delete?") }}{% endif %}"><button class="danger">{{ c.t.s("Delete") }}</button></form>{% endif %}
+  {% if may_share %}<form class="inline" method="post" action="/contacts/{{ k.id }}/share" data-confirm="{{ c.t.s("Move this contact to the shared phone book? Everyone with phone access will see and may change it.") }}"><button>{{ c.t.s("Move to shared phone book") }}</button></form>{% endif %}
+  {% if may_copy %}<form class="inline" method="post" action="/contacts/{{ k.id }}/copy"><button>{{ c.t.s("Copy to my contacts") }}</button></form>{% endif %}
+</div>
 <div class="card" id="notes">
   <h3>{{ c.t.s("Call notes") }}</h3>
   {% if note_numbers.is_empty() %}<p class="muted">{{ c.t.s("Call notes belong to external numbers; this contact has none.") }}</p>{% else %}

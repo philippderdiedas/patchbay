@@ -661,8 +661,13 @@ async fn book_entries(app: &AppState, uid: i32, t: crate::i18n::Tr) -> Result<Ve
             .await
             .map_err(db)?;
     let contacts: Vec<(String, Option<String>, Option<String>, Option<String>)> =
-        sqlx::query_as("SELECT name, organization, phone, mobile FROM contacts WHERE user_id = $1 ORDER BY lower(name), id")
+        // own contacts and the shared phone book
+        sqlx::query_as(
+            "SELECT name, organization, phone, mobile FROM contacts
+             WHERE user_id = $1 OR ($2 AND user_id IS NULL AND deleted_at IS NULL) ORDER BY lower(name), id",
+        )
             .bind(uid)
+            .bind(app.cfg.shared_contacts.on())
             .fetch_all(&app.db)
             .await
             .map_err(db)?;
@@ -796,12 +801,13 @@ pub async fn context(State(app): State<AppState>, u: CurrentUser, Query(q): Quer
     .map_err(anyhow::Error::from)?;
     // same matching as contact_name() : as written or as E.164
     let contact: Option<ContactRef> = sqlx::query_as(
-        "SELECT id, name FROM contacts WHERE user_id = $1 AND length($2) > 4
+        "SELECT id, name FROM contacts WHERE (user_id = $1 OR ($3 AND user_id IS NULL AND deleted_at IS NULL)) AND length($2) > 4
            AND (phone = $2 OR mobile = $2 OR phone_e164 = caller_e164($2) OR mobile_e164 = caller_e164($2))
-         ORDER BY id LIMIT 1",
+         ORDER BY user_id IS NULL, id LIMIT 1",
 )
     .bind(uid)
     .bind(&number)
+    .bind(app.cfg.shared_contacts.on())
     .fetch_optional(&app.db)
     .await
     .map_err(anyhow::Error::from)?;

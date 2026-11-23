@@ -45,6 +45,8 @@ pub struct Config {
     /// PBX_MOBILE_DEVICES=admin|users: who may add a mobile phone as a device (rings in parallel,
     /// dialled out over the trunks); default admin only
     pub mobile_devices_self: bool,
+    /// PBX_SHARED_CONTACTS=off|read|write: shared phone book; read = only admins edit it
+    pub shared_contacts: SharedContacts,
     /// PBX_TTS: runtime text to speech (Wyoming server), None = off
     pub tts: Option<crate::tts::TtsConfig>,
     /// PBX_SCRIPT_HTTP_ALLOW: hosts/networks script apps may fetch from (empty: public internet)
@@ -221,6 +223,37 @@ fn var_or(name: &str, default: &str) -> String {
 }
 
 /// on/off switch (also true/false, yes/no, 1/0); empty or unset: `default`.
+/// Shared phone book (PBX_SHARED_CONTACTS)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SharedContacts {
+    Off,
+    /// everyone reads, only admins edit
+    Read,
+    /// everyone with phone access reads and edits
+    Write,
+}
+
+impl SharedContacts {
+    pub fn on(self) -> bool {
+        self != SharedContacts::Off
+    }
+    /// may this user create, change and delete shared entries
+    pub fn may_edit(self, is_admin: bool) -> bool {
+        match self {
+            SharedContacts::Off => false,
+            SharedContacts::Read => is_admin,
+            SharedContacts::Write => true,
+        }
+    }
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SharedContacts::Off => "off",
+            SharedContacts::Read => "read",
+            SharedContacts::Write => "write",
+        }
+    }
+}
+
 fn on_off(name: &str, default: bool) -> Result<bool> {
     match std::env::var(name).unwrap_or_default().trim().to_lowercase().as_str() {
         "" => Ok(default),
@@ -355,6 +388,12 @@ impl Config {
             apps_per_user: var_or("PBX_APPS_PER_USER", "10").parse().unwrap_or(10),
             devices_per_user: var_or("PBX_DEVICES_PER_USER", "10").parse().unwrap_or(10),
             mobile_devices_self: var_or("PBX_MOBILE_DEVICES", "admin") == "users",
+            shared_contacts: match var_or("PBX_SHARED_CONTACTS", "off").trim().to_lowercase().as_str() {
+                "off" | "" => SharedContacts::Off,
+                "read" => SharedContacts::Read,
+                "write" => SharedContacts::Write,
+                o => anyhow::bail!("PBX_SHARED_CONTACTS={o}: expected off, read or write"),
+            },
             tts: crate::tts::TtsConfig::from_env()?,
             script_http_allow: crate::script::parse_allow(&var_or("PBX_SCRIPT_HTTP_ALLOW", ""))?,
             user_apps: !user_kinds.is_empty(),

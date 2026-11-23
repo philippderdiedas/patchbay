@@ -419,25 +419,30 @@ pub async fn contact_delete(State(app): State<AppState>, u: CurrentUser, Path(id
     if !may_edit(&app, &u, &k) {
         return Err(AppError::Forbidden("Only admins change the shared phone book here.".into()));
     }
-    remove(&app, &u, uid, &k).await?;
+    let mut conn = app.db.acquire().await.map_err(anyhow::Error::from)?;
+    remove(&app, &mut conn, &u, uid, &k).await?;
     let to = if form.back.starts_with("/contacts/duplicates") { crate::dupes::back_to(&form.back) } else { back(k.shared).to_string() };
     Ok(Redirect::to(&to).into_response())
 }
 
 /// Deletes an own contact, or moves a shared one to the bin (the caller checked `may_edit`).
-pub(crate) async fn remove(app: &AppState, u: &CurrentUser, uid: i32, k: &Contact) -> Result<(), AppError> {
-    if k.shared {
+/// Returns whether a row was removed (false: already gone or binned meanwhile).
+pub(crate) async fn remove(app: &AppState, conn: &mut sqlx::PgConnection, u: &CurrentUser, uid: i32, k: &Contact) -> Result<bool, AppError> {
+    let n = if k.shared {
         sqlx::query("UPDATE contacts SET deleted_at = now(), deleted_by = $2 WHERE id = $1 AND user_id IS NULL AND deleted_at IS NULL")
             .bind(k.id)
             .bind(uid)
-            .execute(&app.db)
+            .execute(&mut *conn)
             .await
-            .map_err(anyhow::Error::from)?;
-        crate::db::audit(&app.db, &u.session.sub, "contact.shared.delete", &format!("contact:{}", k.id), serde_json::json!({"name": k.name})).await?;
+            .map_err(anyhow::Error::from)?
+            .rows_affected()
     } else {
-        sqlx::query("DELETE FROM contacts WHERE id = $1 AND user_id = $2").bind(k.id).bind(uid).execute(&app.db).await.map_err(anyhow::Error::from)?;
+        sqlx::query("DELETE FROM contacts WHERE id = $1 AND user_id = $2").bind(k.id).bind(uid).execute(&mut *conn).await.map_err(anyhow::Error::from)?.rows_affected()
+    };
+    if n > 0 && k.shared {
+        crate::db::audit(&app.db, &u.session.sub, "contact.shared.delete", &format!("contact:{}", k.id), serde_json::json!({"name": k.name})).await?;
     }
-    Ok(())
+    Ok(n > 0)
 }
 
 /// New values for an existing contact the viewer may change (merge); a card synced from a phone is
@@ -445,6 +450,7 @@ pub(crate) async fn remove(app: &AppState, u: &CurrentUser, uid: i32, k: &Contac
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn update_fields(
     app: &AppState,
+    conn: &mut sqlx::PgConnection,
     uid: i32,
     k: &Contact,
     name: &str,
@@ -453,10 +459,17 @@ pub(crate) async fn update_fields(
     mobile: &str,
     email: &str,
     note: &str,
-) -> Result<(), AppError> {
+    // values already stored in one of the contacts: kept as they are even if the web form would
+    // reject them (CardDAV stores numbers like "+49.40.123" or "0800-FLOWERS")
+    stored: &[String],
+) -> Result<bool, AppError> {
     let name = opt(name, 80).ok_or_else(|| AppError::BadRequest("Name missing.".into()))?;
-    let (phone, phone_e164) = number("Phone", phone)?;
-    let (mobile, mobile_e164) = number("Mobile", mobile)?;
+    let lenient = |label: &str, v: &str| match number(label, v) {
+        Err(_) if !v.trim().is_empty() && stored.iter().any(|s| s == v) => Ok((Some(v.to_string()), to_e164(v))),
+        r => r,
+    };
+    let (phone, phone_e164) = lenient("Phone", phone)?;
+    let (mobile, mobile_e164) = lenient("Mobile", mobile)?;
     let fields = crate::carddav::Fields {
         name: name.clone(),
         organization: opt(organization, 80),
@@ -467,7 +480,7 @@ pub(crate) async fn update_fields(
     };
     let synced = crate::carddav::contact_card(&app.db, (!k.shared).then_some(uid), k.id).await?.and_then(|(f, v)| v.map(|v| (f, v)));
     let vcard = synced.map(|(old, v)| crate::carddav::patch_vcard(&v, &old, &fields));
-    sqlx::query(
+    let r = sqlx::query(
         "UPDATE contacts SET name = $3, organization = $4, phone = $5, phone_e164 = $6, mobile = $7, mobile_e164 = $8,
                 email = $9, note = $10, vcard = COALESCE($11, vcard), updated_at = now(), updated_by = $2
          WHERE id = $1 AND (user_id = $2 OR ($12 AND user_id IS NULL AND deleted_at IS NULL))",
@@ -484,10 +497,14 @@ pub(crate) async fn update_fields(
     .bind(&fields.note)
     .bind(vcard)
     .bind(k.shared)
-    .execute(&app.db)
+    .execute(&mut *conn)
     .await
     .map_err(anyhow::Error::from)?;
-    Ok(())
+    Ok(n_ok(r.rows_affected()))
+}
+
+fn n_ok(n: u64) -> bool {
+    n == 1
 }
 
 /// POST /contacts/{id}/share: an own contact moves to the shared phone book.

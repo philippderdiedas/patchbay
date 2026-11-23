@@ -69,7 +69,9 @@ pub fn name_key(name: &str) -> String {
             _ => vec![' '],
         })
         .collect();
-    let mut words: Vec<&str> = folded.split_whitespace().collect();
+    // legal forms say nothing about the name and would put every "… GmbH" into one bucket
+    const FORMS: [&str; 12] = ["gmbh", "ag", "kg", "co", "ug", "ev", "e", "v", "ohg", "gbr", "mbh", "haftungsbeschraenkt"];
+    let mut words: Vec<&str> = folded.split_whitespace().filter(|w| !FORMS.contains(w)).collect();
     words.sort_unstable();
     words.join(" ")
 }
@@ -96,12 +98,34 @@ fn distance(a: &str, b: &str, max: usize) -> usize {
 
 /// Names that are probably the same person: same words, or (long enough) at most 2 typos apart.
 pub fn similar_names(a: &str, b: &str) -> bool {
-    let (ka, kb) = (name_key(a), name_key(b));
+    similar_keys(&name_key(a), &name_key(b))
+}
+
+/// On name keys: equal, or a typo or two in a long enough name. Digits must match exactly
+/// ("Filiale 1" / "Filiale 2" are different entries).
+fn similar_keys(ka: &str, kb: &str) -> bool {
     if ka.is_empty() || kb.is_empty() {
         return false;
     }
-    ka == kb || (ka.chars().count() >= 6 && kb.chars().count() >= 6 && distance(&ka, &kb, 2) <= 2)
+    if ka == kb {
+        return true;
+    }
+    let digits = |s: &str| s.chars().filter(char::is_ascii_digit).collect::<String>();
+    if digits(ka) != digits(kb) {
+        return false;
+    }
+    // one typo from 6 characters on, two from 12
+    let len = ka.chars().count().min(kb.chars().count());
+    let max = match len {
+        0..6 => return false,
+        6..12 => 1,
+        _ => 2,
+    };
+    distance(ka, kb, max) <= max
 }
+
+/// Name comparison stops for buckets larger than this (cost grows with its square)
+const MAX_BUCKET: usize = 400;
 
 #[derive(Deserialize)]
 pub struct Criteria {
@@ -216,15 +240,15 @@ fn find(rows: &[Row], numbers: bool, email: bool, names: bool) -> Vec<(usize, us
     }
     if names {
         // compare within buckets of the first two letters of the sorted name (typos rarely hit them)
+        let keys: Vec<String> = rows.iter().map(|r| name_key(&r.name)).collect();
         let mut buckets: HashMap<String, Vec<usize>> = HashMap::new();
-        for (i, r) in rows.iter().enumerate() {
-            let k: String = name_key(&r.name).chars().take(2).collect();
-            buckets.entry(k).or_default().push(i);
+        for (i, k) in keys.iter().enumerate() {
+            buckets.entry(k.chars().take(2).collect()).or_default().push(i);
         }
-        for v in buckets.values() {
+        for v in buckets.values().filter(|v| v.len() <= MAX_BUCKET) {
             for (x, &i) in v.iter().enumerate() {
                 for &j in &v[x + 1..] {
-                    if similar_names(&rows[i].name, &rows[j].name) {
+                    if similar_keys(&keys[i], &keys[j]) {
                         add(i, j, "similar name");
                     }
                 }
@@ -245,7 +269,10 @@ pub async fn page(State(app): State<AppState>, u: CurrentUser, Query(q): Query<C
     let ignored_ids: Vec<(i32, i32)> =
         sqlx::query_as("SELECT a, b FROM contact_dupe_ignores WHERE user_id = $1 ORDER BY created_at DESC").bind(uid).fetch_all(&app.db).await.map_err(anyhow::Error::from)?;
     let ignored_set: HashSet<(i32, i32)> = ignored_ids.iter().copied().collect();
-    let all = find(&rows, numbers, email, names);
+    // CPU work (up to ~12000 contacts): off the async workers
+    let rows = std::sync::Arc::new(rows);
+    let r2 = rows.clone();
+    let all = tokio::task::spawn_blocking(move || find(&r2, numbers, email, names)).await.map_err(anyhow::Error::from)?;
     let mut pairs = vec![];
     let mut more = false;
     for (i, j, reasons) in all {
@@ -407,9 +434,27 @@ pub async fn merge(State(app): State<AppState>, u: CurrentUser, Form(f): Form<Ha
     let mobile = pick("mobile", a.mobile_str(), b.mobile_str());
     let email = pick("email", a.email_str(), b.email_str());
     let note = pick("note", a.note_str(), b.note_str());
+    let stored: Vec<String> = [a.phone_str(), a.mobile_str(), b.phone_str(), b.mobile_str()].into_iter().filter(|s| !s.is_empty()).collect();
     let (target, other) = if keep == ia { (a, b) } else { (b, a) };
-    crate::contacts::update_fields(&app, uid, &target, &name, &organization, &phone, &mobile, &email, &note).await?;
-    crate::contacts::remove(&app, &u, uid, &other).await?;
+    // one transaction, both rows locked: two merges of the same pair (two tabs, two admins) or a
+    // delete in between must not leave both entries deleted
+    let mut tx = app.db.begin().await.map_err(anyhow::Error::from)?;
+    let locked: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM (SELECT id FROM contacts WHERE id = ANY($1) AND (user_id = $2 OR (user_id IS NULL AND deleted_at IS NULL)) FOR UPDATE) l",
+    )
+    .bind(vec![ia, ib])
+    .bind(uid)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(anyhow::Error::from)?;
+    if locked != 2 {
+        return Err(AppError::BadRequest("One of the contacts was changed or deleted meanwhile. Reload the page.".into()));
+    }
+    let updated = crate::contacts::update_fields(&app, &mut tx, uid, &target, &name, &organization, &phone, &mobile, &email, &note, &stored).await?;
+    if !updated || !crate::contacts::remove(&app, &mut tx, &u, uid, &other).await? {
+        return Err(AppError::BadRequest("One of the contacts was changed or deleted meanwhile. Reload the page.".into()));
+    }
+    tx.commit().await.map_err(anyhow::Error::from)?;
     if target.shared || other.shared {
         crate::db::audit(
             &app.db,
@@ -448,6 +493,9 @@ mod tests {
         assert_eq!(name_key("Müller, Hans"), "hans mueller");
         assert!(similar_names("Hans Müller", "Müller, Hans"));
         assert!(similar_names("Hans Mueller", "Hans Müler"));
+        assert!(similar_names("Lieferant GmbH", "Lieferant"), "legal form ignored");
+        assert!(!similar_names("Firma00001 Handel GmbH", "Firma00002 Handel GmbH"), "numbered entries differ");
+        assert!(!similar_names("Filiale 1", "Filiale 2"));
         assert!(!similar_names("Hans Müller", "Hans Meier"));
         assert!(!similar_names("Bo", "Bob"), "short names only when equal");
         assert_eq!(distance("kitten", "sitting", 5), 3);

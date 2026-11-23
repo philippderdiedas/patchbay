@@ -243,6 +243,23 @@ pub async fn create_mobile_device(db: &PgPool, user_id: i32, label: &str, e164: 
     .await?)
 }
 
+/// New SIP password for a device (only its HA1 is stored). The caller shows it once and expires
+/// Asterisk's caches (the device must register again with the new password).
+pub async fn set_device_password(db: &PgPool, realm: &str, device_id: i32, sip_username: &str, pass: &str) -> Result<()> {
+    sqlx::query("UPDATE devices SET ha1 = $3 WHERE id = $1 AND sip_username = $2 AND deleted_at IS NULL")
+        .bind(device_id)
+        .bind(sip_username)
+        .bind(ha1(sip_username, realm, pass))
+        .execute(db)
+        .await?;
+    Ok(())
+}
+
+/// A SIP password typed by an admin: 12–64 printable ASCII characters without spaces and quotes.
+pub fn valid_sip_password(p: &str) -> bool {
+    (12..=64).contains(&p.len()) && p.chars().all(|c| c.is_ascii_graphic() && c != '"' && c != '\'')
+}
+
 /// Creates a token; only its SHA-256 is stored.
 pub async fn create_token(db: &PgPool, device_id: i32, kind: &str, valid_minutes: Option<i64>) -> Result<String> {
     let token = hex::encode(rand::thread_rng().r#gen::<[u8; 24]>());

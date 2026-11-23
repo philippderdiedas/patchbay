@@ -39,11 +39,19 @@
       {% else %}<td><code>{{ d.sip_username }}</code></td>
       <td data-reg="{{ d.id }}">{% if !d.enabled %}<span class="off">{{ c.t.s("locked") }}</span>{% else %}{% let st = d.reg_state() %}<span class="reg reg-{{ st }}">{% if st == "online" %}{{ c.t.s("registered") }}{% else if st == "unreachable" %}{{ c.t.s("not reachable") }}{% else %}{{ c.t.s("not registered") }}{% endif %}</span>{% let det = d.reg_detail() %}{% if !det.is_empty() %}<br><small class="muted">{{ det }}</small>{% endif %}{% endif %}</td>{% endif %}
       <td class="row">
-        {% if d.enabled && !d.is_mobile() %}<button type="button" data-ringtest="{{ d.id }}">{{ c.t.s("Ring test") }}</button>{% endif %}
+        {% if d.enabled && (!d.is_mobile() || d.ring) %}<button type="button" data-ringtest="{{ d.id }}">{{ c.t.s("Ring test") }}</button>{% endif %}
         <form class="inline" method="post" action="/admin/users/{{ user.id }}/devices/{{ d.id }}">
           {% if d.enabled %}<input type="hidden" name="action" value="disable"><button>{{ c.t.s("Lock") }}</button>
           {% else %}<input type="hidden" name="action" value="enable"><button>{{ c.t.s("Unlock") }}</button>{% endif %}
         </form>
+        {% if d.type == "generic" %}<details class="inline"><summary>{{ c.t.s("Password") }}</summary>
+          <form class="inline" method="post" action="/admin/users/{{ user.id }}/devices/{{ d.id }}" data-confirm="{{ c.t.s("Set a new random password? The device stays offline until it is entered there.") }}">
+            <input type="hidden" name="action" value="password_reset"><button>{{ c.t.s("New random password") }}</button></form>
+          <form class="inline row" method="post" action="/admin/users/{{ user.id }}/devices/{{ d.id }}">
+            <input type="hidden" name="action" value="password_set">
+            <input type="password" name="password" minlength="12" maxlength="64" autocomplete="new-password" required placeholder="{{ c.t.s("own password (12+ characters)") }}" aria-label="{{ c.t.s("New password") }}">
+            <button>{{ c.t.s("Set") }}</button></form>
+        </details>{% endif %}
         <form class="inline" method="post" action="/admin/users/{{ user.id }}/devices/{{ d.id }}" data-confirm="{{ c.t.s("Really delete?") }}">
           <input type="hidden" name="action" value="delete"><button class="danger">{{ c.t.s("Delete") }}</button></form>
       </td>
@@ -63,7 +71,7 @@
     </select>
     <input name="contact" data-show-when="type=fixed" placeholder="sip:42@10.0.0.5:5070" maxlength="120" aria-label="{{ c.t.s("Fixed address") }}">
     <input name="mobile" data-show-when="type=mobile" placeholder="+49 176 …" maxlength="30" inputmode="tel" aria-label="{{ c.t.s("Mobile number") }}">
-    {% let tsel_t = "tls" %}{% let tsel_s = "optional" %}{% include "transport_select.html" %}
+    <span class="row" data-show-when="type!=mobile,linphone">{% let tsel_t = "tls" %}{% let tsel_s = "optional" %}{% include "transport_select.html" %}</span>
     <button class="primary">{{ c.t.s("Create") }}</button>
   </form>
   <p class="muted">{{ c.t.s("SIP device: credentials are shown once and entered on the device (e.g. a DECT base). Linphone: QR code.") }}

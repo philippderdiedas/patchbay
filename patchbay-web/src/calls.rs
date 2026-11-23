@@ -36,6 +36,20 @@ async fn device_for(app: &AppState, u: &CurrentUser, id: i32) -> Result<(String,
 }
 
 pub async fn ring_test(State(app): State<AppState>, u: CurrentUser, Path(id): Path<i32>) -> Result<Json<Reply>, AppError> {
+    // mobile phone: rings over the trunks like a real call (ring-mobile, owner's permissions)
+    let mobile: Option<(i16, i32)> = sqlx::query_as("SELECT extension, user_id FROM mobile_legs WHERE id = $1")
+        .bind(id)
+        .fetch_optional(&app.db)
+        .await
+        .map_err(anyhow::Error::from)?;
+    if let Some((ext, owner)) = mobile {
+        if !u.is_admin && u.session.user_id != Some(owner) {
+            return Err(AppError::NotFound);
+        }
+        ami::originate(&format!("Local/0-{id}@ring-mobile"), "ring-test", "s", &format!("\"Ring test\" <{ext}>"), &[]).await?;
+        db::audit(&app.db, &u.session.sub, "device.ring_test", &format!("device-id:{id}"), serde_json::json!({"mobile": true})).await?;
+        return Ok(reply(true, "ringing"));
+    }
     let (sip, ext) = device_for(&app, &u, id).await?;
     if !ami::is_registered(&sip).await.unwrap_or(false) {
         return Ok(reply(false, "not registered"));

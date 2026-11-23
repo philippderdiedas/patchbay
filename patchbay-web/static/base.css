@@ -112,6 +112,9 @@ button { cursor: pointer; }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
 button.danger { color: var(--danger); }
 form.inline { display: inline; }
+details.inline { display: inline-block; vertical-align: middle; }
+details.inline[open] { display: block; }
+details.inline > summary { cursor: pointer; }
 input[type="number"].short { width: 90px; }
 [hidden] { display: none !important; }
 select { max-width: 100%; }

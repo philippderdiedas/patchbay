@@ -58,12 +58,16 @@ function pbxToast(text, ok) {
       update();
     });
 
-    // Show parts of a form depending on a select: data-show-when="field=value"
+    // Show parts of a form depending on a select: data-show-when="field=value" or
+    // "field!=a,b" (shown unless the value is one of a, b)
     document.querySelectorAll("[data-show-when]").forEach((el) => {
-      const [field, value] = el.dataset.showWhen.split("=");
+      const spec = el.dataset.showWhen;
+      const neg = spec.includes("!=");
+      const [field, list] = spec.split(neg ? "!=" : "=");
+      const values = list.split(",");
       const sel = el.closest("form")?.querySelector(`[name="${field}"]`);
       if (!sel) return;
-      const update = () => { el.hidden = sel.value !== value; };
+      const update = () => { el.hidden = values.includes(sel.value) === neg; };
       sel.addEventListener("change", update);
       update();
     });

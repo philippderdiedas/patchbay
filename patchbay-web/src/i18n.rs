@@ -153,6 +153,12 @@ fn de_pairs() -> Vec<(&'static str, &'static str)> {
         ("Mobile phone: not a valid phone number (e.g. +49 176 …).", "Handy: keine gültige Rufnummer (z. B. +49 176 …)."),
         ("Mobile phone: this number is outside the person's dialling permissions.", "Handy: diese Nummer liegt außerhalb der Wählberechtigungen der Person."),
         ("A mobile phone has no SIP transport.", "Ein Handy hat keinen SIP-Transport."),
+        // admin: SIP password of a device
+        ("Set a new random password? The device stays offline until it is entered there.", "Neues Zufallspasswort setzen? Das Gerät bleibt offline, bis es dort eingetragen ist."),
+        ("New random password", "Neues Zufallspasswort"),
+        ("own password (12+ characters)", "eigenes Passwort (ab 12 Zeichen)"),
+        ("Only plain SIP devices have a password to set (Linphone: new QR code).", "Ein Passwort gibt es nur bei normalen SIP-Geräten (Linphone: neuer QR-Code)."),
+        ("Password: 12 to 64 characters, no spaces or quotes.", "Passwort: 12 bis 64 Zeichen, ohne Leerzeichen und Anführungszeichen."),
         // CardDAV address book list (phone book page)
         ("Address books", "Adressbücher"),
         ("Address book", "Adressbuch"),

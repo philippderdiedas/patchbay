@@ -67,7 +67,7 @@
           {% for (s, sel) in d.delay_options() %}<option value="{{ s }}" {% if sel %}selected{% endif %}>{% if s == 0 %}{{ c.t.s("immediately") }}{% else %}+{{ s }} s{% endif %}</option>{% endfor %}
         </select></form>{% endif %}</td>
       <td class="row">
-        {% if d.enabled && !d.is_mobile() %}<button type="button" data-ringtest="{{ d.id }}">{{ c.t.s("Ring test") }}</button>{% endif %}
+        {% if d.enabled && (!d.is_mobile() || d.ring) %}<button type="button" data-ringtest="{{ d.id }}">{{ c.t.s("Ring test") }}</button>{% endif %}
         {% if d.managed_by == "self" %}
           {% if d.type == "linphone" && d.enabled %}<form class="inline" method="post" action="/devices/{{ d.id }}/qr"><button>{{ c.t.s("QR code") }}</button></form>{% endif %}
           <form class="inline" method="post" action="/devices/{{ d.id }}">
@@ -91,7 +91,7 @@
       <option value="linphone">{{ c.t.s("Linphone (QR code)") }}</option>
       <option value="generic">{{ c.t.s("SIP device (manual setup)") }}</option>
     </select>
-    {% let tsel_t = "tls" %}{% let tsel_s = "optional" %}{% include "transport_select.html" %}{% endif %}
+    <span class="row" data-show-when="type!=linphone">{% let tsel_t = "tls" %}{% let tsel_s = "optional" %}{% include "transport_select.html" %}</span>{% endif %}
     <button class="primary">{{ c.t.s("Create") }}</button>
   </form>
   <p class="muted">{{ c.t.s("Install Linphone, choose “Scan QR code” or “Fetch remote configuration” in the assistant. Only inside the internal network or via VPN.") }}</p>

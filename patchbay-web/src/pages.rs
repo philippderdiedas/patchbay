@@ -462,6 +462,9 @@ pub struct DeviceAction {
     transport: Option<String>,
     #[serde(default)]
     srtp: Option<String>,
+    /// admin action "password_set": the new SIP password
+    #[serde(default)]
+    password: Option<String>,
 }
 
 /// Ringing on/off (all devices), lock/unlock and delete (self-managed only).
@@ -669,6 +672,31 @@ pub async fn admin_device_action(
     Form(f): Form<DeviceAction>,
 ) -> Result<Response, AppError> {
     let d = db::device_of(&app.db, uid, did).await?.ok_or(AppError::NotFound)?;
+    if f.action == "password_reset" || f.action == "password_set" {
+        // plain SIP devices only: Linphone is provisioned (new QR code instead), mobiles have no account
+        if d.r#type != "generic" {
+            return Err(AppError::BadRequest("Only plain SIP devices have a password to set (Linphone: new QR code).".into()));
+        }
+        let pass = if f.action == "password_set" {
+            let p = f.password.as_deref().unwrap_or("").trim().to_string();
+            if !db::valid_sip_password(&p) {
+                return Err(AppError::BadRequest("Password: 12 to 64 characters, no spaces or quotes.".into()));
+            }
+            p
+        } else {
+            db::random_string(24)
+        };
+        db::set_device_password(&app.db, &app.cfg.sip_realm, did, &d.sip_username, &pass).await?;
+        db::audit(&app.db, &u.session.sub, "device.password", &format!("device:{}", d.num()), serde_json::json!({"manual": f.action == "password_set"})).await?;
+        app.asterisk_kick(&d.sip_username).await;
+        return render(CredentialsPage {
+            c: Ctx::new(&app, &u).section("users"),
+            device: d,
+            realm: app.cfg.sip_realm.clone(),
+            password: pass,
+            back: format!("/admin/users/{uid}"),
+        });
+    }
     if f.action == "transport" {
         if d.is_mobile() {
             return Err(AppError::BadRequest("A mobile phone has no SIP transport.".into()));

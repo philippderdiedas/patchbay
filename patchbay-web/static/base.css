@@ -84,6 +84,8 @@ h2 { margin-top: 0; }
 main { max-width: var(--content-width); margin: 0 auto; padding: var(--space); }
 .card { background: var(--surface); border: var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: var(--space); margin-bottom: var(--space); }
 .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+/* action buttons between two cards (e.g. contact page) */
+.row.actions { margin-bottom: var(--space); }
 .muted { color: var(--muted); }
 /* start page: something diverts calls (forward / DND) */
 .banner { background: var(--warn-bg); border: 1px solid var(--warn); border-left-width: 4px; border-radius: var(--radius); padding: 10px var(--space); margin-bottom: var(--space); }

@@ -753,6 +753,9 @@ fn de_pairs() -> Vec<(&'static str, &'static str)> {
         ("Move this contact to the shared phone book? Everyone with phone access will see and may change it. Only the fields shown here are kept (no photo, address or birthday from a phone).", "Diesen Kontakt ins gemeinsame Telefonbuch verschieben? Alle mit Telefonzugang sehen ihn und dürfen ihn ändern. Nur die hier gezeigten Felder bleiben erhalten (kein Foto, keine Adresse, kein Geburtstag von einem Telefon)."),
         ("Move to shared phone book", "Ins gemeinsame Telefonbuch verschieben"),
         ("Copy to my contacts", "In meine Kontakte kopieren"),
+        // phone book page: jump links
+        ("Phone books", "Telefonbücher"),
+        ("On other devices", "Auf anderen Geräten"),
         // duplicate finder (dupes.rs)
         ("Duplicates", "Doppelte Einträge"),
         ("Compares your contacts with each other and with the shared phone book.", "Vergleicht deine Kontakte untereinander und mit dem gemeinsamen Telefonbuch."),

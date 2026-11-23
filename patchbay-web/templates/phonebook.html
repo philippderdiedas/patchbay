@@ -1,7 +1,14 @@
 {% extends "base.html" %}
 {% block title %}{{ c.t.s("Phone book") }}{% endblock %}
 {% block content %}
-<div class="card">
+<nav class="subnav noprint" aria-label="{{ c.t.s("Phone books") }}">
+  <a href="#colleagues">{{ c.t.s("Colleagues") }}</a>
+  <a href="#services">{{ c.t.s("Services") }}</a>
+  {% if has_phone %}<a href="#contacts">{{ c.t.s("My contacts") }}</a>
+  {% if shared_on %}<a href="#shared">{{ c.t.s("Shared phone book") }}</a>{% endif %}
+  <a href="#carddav">{{ c.t.s("On other devices") }}</a>{% endif %}
+</nav>
+<div class="card" id="colleagues">
   <div class="row noprint" style="justify-content: space-between">
     <h2>{{ c.t.s("Phone book · internal") }}</h2>
     <button type="button" data-print title="{{ c.t.s("Colleagues and services as a list, e.g. to put up next to a phone") }}">{{ c.t.s("Print") }}</button>

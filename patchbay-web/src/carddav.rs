@@ -673,16 +673,24 @@ fn text_matches(body: &str) -> Vec<String> {
     out
 }
 
-/// hrefs of an addressbook-multiget (percent-decoded)
+/// hrefs of an addressbook-multiget (percent-decoded). Matches `<href>`, `<d:href>` and opening
+/// tags with attributes such as iOS' `<A:href xmlns:A="DAV:">`.
 fn hrefs(body: &str) -> Vec<String> {
     let mut out = vec![];
     let mut rest = body;
-    while let Some(i) = rest.find("href>") {
-        let after = &rest[i + 5..];
-        let Some(lt) = after.find('<') else { break };
-        let h = after[..lt].trim().replace("&amp;", "&");
+    while let Some(i) = rest.find('<') {
+        let tag = &rest[i + 1..];
+        let Some(gt) = tag.find('>') else { break };
+        let name = tag[..gt].split(|c: char| c.is_whitespace() || c == '/').next().unwrap_or("");
+        let local = name.rsplit(':').next().unwrap_or("");
+        rest = &tag[gt + 1..];
+        if local != "href" || tag.starts_with('/') || tag[..gt].ends_with('/') {
+            continue;
+        }
+        let Some(lt) = rest.find('<') else { break };
+        let h = rest[..lt].trim().replace("&amp;", "&");
         out.push(percent_encoding::percent_decode_str(&h).decode_utf8_lossy().into_owned());
-        rest = &after[lt..];
+        rest = &rest[lt..];
     }
     out
 }
@@ -923,6 +931,16 @@ pub async fn contact_card(db: &sqlx::PgPool, uid: i32, id: i32) -> anyhow::Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_multiget_hrefs_with_attributes() {
+        let ios = "<?xml version=\"1.0\"?><D:addressbook-multiget xmlns:D=\"urn:ietf:params:xml:ns:carddav\">\
+            <A:prop xmlns:A=\"DAV:\"><A:getetag/><D:address-data/></A:prop>\
+            <A:href xmlns:A=\"DAV:\">/carddav/colleagues/u5.vcf</A:href>\
+            <A:href xmlns:A=\"DAV:\">/carddav/colleagues/a%20b.vcf</A:href></D:addressbook-multiget>";
+        assert_eq!(hrefs(ios), vec!["/carddav/colleagues/u5.vcf", "/carddav/colleagues/a b.vcf"]);
+        assert_eq!(hrefs("<d:href>/x/u1.vcf</d:href><href>/x/u2.vcf</href>"), vec!["/x/u1.vcf", "/x/u2.vcf"]);
+    }
 
     #[test]
     fn parses_text_match_and_digest() {

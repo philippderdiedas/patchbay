@@ -8,6 +8,7 @@ mod auth;
 mod bot;
 mod calls;
 mod certwatch;
+mod callflow;
 mod calltrack;
 mod carddav;
 mod companion;

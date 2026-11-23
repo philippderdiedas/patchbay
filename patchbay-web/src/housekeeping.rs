@@ -31,7 +31,11 @@ pub fn spawn(app: AppState) {
 }
 
 async fn retention(app: &AppState) -> Result<()> {
-    for (table, column, days) in [("cdr", "calldate", app.cfg.retention_calls_days), ("audit_log", "at", app.cfg.retention_audit_days)] {
+    for (table, column, days) in [
+        ("cdr", "calldate", app.cfg.retention_calls_days),
+        ("call_flows", "started_at", app.cfg.retention_calls_days),
+        ("audit_log", "at", app.cfg.retention_audit_days),
+    ] {
         if days <= 0 {
             continue;
         }

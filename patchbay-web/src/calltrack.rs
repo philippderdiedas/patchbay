@@ -48,6 +48,84 @@ struct Call {
     targets: Vec<Tgt>,
     answered: Option<f64>,
     chans: HashSet<String>,
+    /// call flow for the admin call log (callflow.rs)
+    origin: FlowOrigin,
+    dials: Vec<FlowDial>,
+    voicemail: bool,
+    answered_by: Option<String>,
+}
+
+/// Where a call started: the first channel (a device, a trunk, an originate).
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct FlowOrigin {
+    /// PJSIP endpoint of the first channel ("" for Local/IAX2/originate)
+    #[serde(default)]
+    pub ep: String,
+    /// channel technology and peer for non-PJSIP origins, e.g. "IAX2/site124"
+    #[serde(default)]
+    pub chan: String,
+    /// number dialled on the first channel (outbound/internal calls)
+    #[serde(default)]
+    pub exten: String,
+    #[serde(default)]
+    pub num: String,
+    #[serde(default)]
+    pub name: String,
+}
+
+/// One Dial() leg to a PJSIP endpoint (device or trunk) or IAX2 peer.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct FlowDial {
+    /// endpoint (PJSIP) or "IAX2/<peer>"
+    pub ep: String,
+    /// dialled number on a trunk ("0176…@sip-5" → "0176…"), empty for devices
+    #[serde(default)]
+    pub to: String,
+    /// caller ID sent on this leg
+    #[serde(default)]
+    pub clip: String,
+    /// DialEnd status (ANSWER, BUSY, NOANSWER, …); empty while unknown
+    #[serde(default)]
+    pub status: String,
+    #[serde(skip)]
+    pub(crate) chan: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct FlowStep {
+    /// user | group | ivr
+    pub kind: String,
+    pub number: String,
+    /// answered | missed | passed | ringing
+    pub state: String,
+    #[serde(default)]
+    pub fwd: bool,
+    #[serde(default)]
+    pub dnd: bool,
+}
+
+/// A finished call as stored in call_flows (written by `spawn`).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct Flow {
+    #[serde(skip)]
+    pub linkedid: String,
+    #[serde(skip)]
+    pub started: f64,
+    #[serde(skip)]
+    pub duration_s: u64,
+    #[serde(skip)]
+    pub talk_s: Option<u64>,
+    pub origin: FlowOrigin,
+    #[serde(default)]
+    pub did: Option<String>,
+    #[serde(default)]
+    pub steps: Vec<FlowStep>,
+    #[serde(default)]
+    pub dials: Vec<FlowDial>,
+    #[serde(default)]
+    pub voicemail: bool,
+    #[serde(default)]
+    pub answered_by: Option<String>,
 }
 
 #[derive(Default)]
@@ -55,6 +133,19 @@ pub struct Tracker {
     calls: HashMap<String, Call>,
     /// channel uniqueid → call id
     chan_call: HashMap<String, String>,
+    /// finished calls not yet stored (drained by `take_flows`)
+    flows: Vec<Flow>,
+}
+
+/// "PJSIP/abc-0000002a" → ("abc", ""), "IAX2/site124-1234" → ("", "IAX2/site124"), Local → ("", "")
+fn origin_of(chan: &str) -> (String, String) {
+    if let Some(ep) = pjsip_endpoint(chan) {
+        return (ep.to_string(), String::new());
+    }
+    match chan.strip_prefix("IAX2/") {
+        Some(rest) => (String::new(), format!("IAX2/{}", rest.rsplit_once('-').map(|(p, _)| p).unwrap_or(rest))),
+        None => (String::new(), String::new()),
+    }
 }
 
 fn get<'a>(m: &'a Msg, k: &str) -> &'a str {
@@ -109,15 +200,23 @@ impl Tracker {
                     return out;
                 }
                 self.chan_call.insert(uid.to_string(), lid.to_string());
-                let c = self.calls.entry(lid.to_string()).or_insert_with(|| Call {
-                    id: lid.to_string(),
-                    started: now,
-                    last: now,
-                    caller: party(m),
-                    did: None,
-                    targets: vec![],
-                    answered: None,
-                    chans: HashSet::new(),
+                let c = self.calls.entry(lid.to_string()).or_insert_with(|| {
+                    let (ep, chan) = origin_of(get(m, "Channel"));
+                    let p = party(m);
+                    Call {
+                        id: lid.to_string(),
+                        started: now,
+                        last: now,
+                        caller: p.clone(),
+                        did: None,
+                        targets: vec![],
+                        answered: None,
+                        chans: HashSet::new(),
+                        origin: FlowOrigin { ep, chan, exten: get(m, "Exten").to_string(), num: p.number, name: p.name.unwrap_or_default() },
+                        dials: vec![],
+                        voicemail: false,
+                        answered_by: None,
+                    }
                 });
                 c.chans.insert(uid.to_string());
                 c.last = now;
@@ -155,7 +254,10 @@ impl Tracker {
                             dnd: get(m, "Dnd") == "1",
                         });
                     }
-                    "PbxVoicemail" => Self::close_open(c, Some(MissReason::Voicemail), &mut out),
+                    "PbxVoicemail" => {
+                        c.voicemail = true;
+                        Self::close_open(c, Some(MissReason::Voicemail), &mut out)
+                    }
                     // ring time over (or DND) without an answer; forwarded/DND targets keep their reason
                     "PbxNoAnswer" => Self::close_open(c, None, &mut out),
                     _ => {}
@@ -163,7 +265,21 @@ impl Tracker {
             }
             "DialBegin" => {
                 let Some(c) = self.call_mut(m, now) else { return out };
-                if let Some(ep) = pjsip_endpoint(get(m, "DestChannel")) {
+                let dest = get(m, "DestChannel");
+                let (dep, dchan) = origin_of(dest);
+                if !dep.is_empty() || !dchan.is_empty() {
+                    // trunk legs: "0176…@sip-5" / "site124/1241003" → the dialled number
+                    let ds = get(m, "DialString");
+                    let to = ds.split_once('@').map(|(n, _)| n).or_else(|| ds.split_once('/').map(|(_, n)| n)).unwrap_or("");
+                    c.dials.push(FlowDial {
+                        ep: if dep.is_empty() { dchan } else { dep },
+                        to: to.to_string(),
+                        clip: get(m, "CallerIDNum").replace("<unknown>", ""),
+                        status: String::new(),
+                        chan: dest.to_string(),
+                    });
+                }
+                if let Some(ep) = pjsip_endpoint(dest) {
                     if let Some(t) = c.targets.iter_mut().rev().find(|t| t.state == State::Ringing) {
                         if !t.rang.iter().any(|r| r == ep) {
                             t.rang.push(ep.to_string());
@@ -172,7 +288,14 @@ impl Tracker {
                 }
             }
             "DialEnd" => {
-                if get(m, "DialStatus") != "ANSWER" {
+                let status = get(m, "DialStatus");
+                if let Some(c) = self.call_mut(m, now) {
+                    let dest = get(m, "DestChannel");
+                    if let Some(d) = c.dials.iter_mut().rev().find(|d| d.chan == dest) {
+                        d.status = status.to_string();
+                    }
+                }
+                if status != "ANSWER" {
                     return out;
                 }
                 let Some(ep) = pjsip_endpoint(get(m, "DestChannel")).map(String::from) else { return out };
@@ -182,6 +305,7 @@ impl Tracker {
                     return out;
                 }
                 c.answered = Some(now);
+                c.answered_by = Some(ep.clone());
                 let target = c.targets.iter().rposition(|t| t.state == State::Ringing).map(|i| {
                     c.targets[i].state = State::Answered;
                     c.targets[i].t.clone()
@@ -204,7 +328,7 @@ impl Tracker {
                     };
                     if done {
                         if let Some(c) = self.calls.remove(&lid) {
-                            Self::finish(c, now, &mut out);
+                            self.finish(c, now, &mut out);
                         }
                     }
                 }
@@ -246,7 +370,61 @@ impl Tracker {
         }
     }
 
-    fn finish(mut c: Call, now: f64, out: &mut Vec<PbxEvent>) {
+    /// The stored flow of a finished call: calls that reached a target or dialled somewhere.
+    fn flow(c: &Call, now: f64) -> Option<Flow> {
+        if c.targets.is_empty() && c.dials.is_empty() {
+            return None;
+        }
+        // answered without a target (outbound/internal): the answering leg, if any
+        let answered = c.answered.or_else(|| c.dials.iter().any(|d| d.status == "ANSWER").then_some(c.started));
+        Some(Flow {
+            linkedid: c.id.clone(),
+            started: c.started,
+            duration_s: (now - c.started).max(0.0).round() as u64,
+            talk_s: answered.map(|a| (now - a).max(0.0).round() as u64),
+            origin: c.origin.clone(),
+            did: c.did.clone(),
+            steps: c
+                .targets
+                .iter()
+                .map(|t| FlowStep {
+                    kind: match t.t.kind {
+                        TargetKind::User => "user",
+                        TargetKind::Group => "group",
+                        TargetKind::Ivr => "ivr",
+                    }
+                    .into(),
+                    number: t.t.number.clone(),
+                    state: match t.state {
+                        State::Answered => "answered",
+                        State::Missed => "missed",
+                        State::Passed => "passed",
+                        State::Ringing => "ringing",
+                    }
+                    .into(),
+                    fwd: t.fwd,
+                    dnd: t.dnd,
+                })
+                .collect(),
+            dials: c.dials.clone(),
+            voicemail: c.voicemail,
+            answered_by: c.answered_by.clone().or_else(|| c.dials.iter().find(|d| d.status == "ANSWER").map(|d| d.ep.clone())),
+        })
+    }
+
+    /// Finished calls since the last call (for call_flows).
+    pub fn take_flows(&mut self) -> Vec<Flow> {
+        std::mem::take(&mut self.flows)
+    }
+
+    fn finish(&mut self, mut c: Call, now: f64, out: &mut Vec<PbxEvent>) {
+        Self::finish_events(&mut c, now, out);
+        if let Some(f) = Self::flow(&c, now) {
+            self.flows.push(f);
+        }
+    }
+
+    fn finish_events(c: &mut Call, now: f64, out: &mut Vec<PbxEvent>) {
         if c.targets.is_empty() {
             return;
         }
@@ -283,7 +461,7 @@ impl Tracker {
         for id in stale {
             if let Some(c) = self.calls.remove(&id) {
                 self.chan_call.retain(|_, l| *l != id);
-                Self::finish(c, now, &mut out);
+                self.finish(c, now, &mut out);
             }
         }
         out
@@ -313,6 +491,29 @@ pub fn spawn(app: AppState) {
     });
 }
 
+/// Writes finished call flows (best effort, in the background: the event loop never waits on the DB).
+fn store_flows(app: &AppState, flows: Vec<Flow>) {
+    for f in flows {
+        let db = app.db.clone();
+        tokio::spawn(async move {
+            let r = sqlx::query(
+                "INSERT INTO call_flows (linkedid, started_at, duration_s, talk_s, flow)
+                 VALUES ($1, to_timestamp($2), $3, $4, $5) ON CONFLICT (linkedid) DO NOTHING",
+            )
+            .bind(&f.linkedid)
+            .bind(f.started)
+            .bind(f.duration_s.min(i32::MAX as u64) as i32)
+            .bind(f.talk_s.map(|t| t.min(i32::MAX as u64) as i32))
+            .bind(serde_json::to_value(&f).unwrap_or_default())
+            .execute(&db)
+            .await;
+            if let Err(e) = r {
+                tracing::warn!("call flow {}: {e:#}", f.linkedid);
+            }
+        });
+    }
+}
+
 async fn run(app: &AppState, tracker: &mut Tracker) -> anyhow::Result<()> {
     // security: failed logins for /monitor/sip-auth (secwatch.rs)
     let mut conn = ami::EventConn::open("call,user,security").await?;
@@ -321,6 +522,7 @@ async fn run(app: &AppState, tracker: &mut Tracker) -> anyhow::Result<()> {
     for ev in tracker.reconcile(&live, now()) {
         app.events.publish(ev);
     }
+    store_flows(app, tracker.take_flows());
     app.live.set_via(tracker.via());
     tracing::info!("call tracking connected ({} open calls)", tracker.open_calls());
     loop {
@@ -329,6 +531,7 @@ async fn run(app: &AppState, tracker: &mut Tracker) -> anyhow::Result<()> {
         for ev in tracker.handle(&m, now()) {
             app.events.publish(ev);
         }
+        store_flows(app, tracker.take_flows());
         if matches!(m.get("Event").map(String::as_str), Some("UserEvent" | "Hangup" | "Newchannel")) {
             app.live.set_via(tracker.via());
         }
@@ -342,6 +545,10 @@ mod tests {
     /// Parses recorded AMI traffic ("Key: Value" lines, blank line between events). A line
     /// "#t <seconds>" sets the clock for the following events.
     fn replay(raw: &str) -> Vec<PbxEvent> {
+        replay_flows(raw).0
+    }
+
+    fn replay_flows(raw: &str) -> (Vec<PbxEvent>, Vec<Flow>) {
         let mut tr = Tracker::default();
         let mut out = vec![];
         let mut t = 0.0;
@@ -362,7 +569,38 @@ mod tests {
             }
         }
         assert_eq!(tr.open_calls(), 0, "calls left open");
-        out
+        (out, tr.take_flows())
+    }
+
+    #[test]
+    fn flow_of_group_call_and_outbound_call() {
+        let (_, flows) = replay_flows(include_str!("calltrack_fixtures/group_answered.ami"));
+        assert_eq!(flows.len(), 1);
+        let f = &flows[0];
+        assert_eq!(f.steps.first().map(|s| s.kind.as_str()), Some("group"));
+        assert!(f.steps.iter().any(|s| s.state == "answered"));
+        assert!(f.answered_by.is_some());
+        assert!(f.dials.iter().any(|d| d.status == "ANSWER"));
+        assert!(f.talk_s.is_some());
+
+        // outbound: device dials over a trunk; no PbxTarget, still a flow
+        let raw = "Event: Newchannel\nChannel: PJSIP/dev1020-00000001\nCallerIDNum: 1020\nCallerIDName: Tim\nExten: 017612345678\nUniqueid: 9.1\nLinkedid: 9.1\n\n\
+#t 1\nEvent: Newchannel\nChannel: PJSIP/sip-5-00000002\nUniqueid: 9.2\nLinkedid: 9.1\n\n\
+Event: DialBegin\nChannel: PJSIP/dev1020-00000001\nCallerIDNum: 04012345\nDestChannel: PJSIP/sip-5-00000002\nDialString: 017612345678@sip-5\nUniqueid: 9.1\nLinkedid: 9.1\n\n\
+#t 5\nEvent: DialEnd\nChannel: PJSIP/dev1020-00000001\nDestChannel: PJSIP/sip-5-00000002\nDialStatus: ANSWER\nUniqueid: 9.1\nLinkedid: 9.1\n\n\
+#t 65\nEvent: Hangup\nUniqueid: 9.2\n\nEvent: Hangup\nUniqueid: 9.1\n";
+        let (evs, flows) = replay_flows(raw);
+        assert!(evs.is_empty(), "outbound calls produce no notify events");
+        let f = &flows[0];
+        assert_eq!(f.origin.ep, "dev1020");
+        assert_eq!(f.origin.exten, "017612345678");
+        assert_eq!(f.dials, vec![FlowDial { ep: "sip-5".into(), to: "017612345678".into(), clip: "04012345".into(), status: "ANSWER".into(), chan: "PJSIP/sip-5-00000002".into() }]);
+        assert_eq!(f.answered_by.as_deref(), Some("sip-5"));
+        assert_eq!(f.duration_s, 65);
+        // stored JSON round trip (without the internal channel name)
+        let back: Flow = serde_json::from_value(serde_json::to_value(f).unwrap()).unwrap();
+        assert_eq!(back.dials[0].to, "017612345678");
+        assert_eq!(origin_of("IAX2/site124-1234"), (String::new(), "IAX2/site124".to_string()));
     }
 
     fn names(evs: &[PbxEvent]) -> Vec<&'static str> {

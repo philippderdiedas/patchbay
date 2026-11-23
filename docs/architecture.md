@@ -394,6 +394,14 @@ channels with the same `Linkedid`; the dialplan marks business steps with `UserE
 `PbxNoAnswer`, `PbxVoicemail`, `PbxRecall`). The tracker is a pure state machine tested with
 recorded event sequences.
 
+Every finished call that reached a target or dialled somewhere is also stored as a **call flow**
+(`call_flows`, one JSON row per `Linkedid`): origin (device, trunk or IAX peer and the number dialled),
+DID, targets with their outcome, every `Dial` leg (endpoint, number on a trunk, caller ID sent,
+`DialStatus`), voicemail and who answered. The admin call log (`callflow.rs`) shows one line per call,
+e.g. `1020 Tim · Gigaset (2004) → via 053 (shows 040…) → 0176…`; calls without a stored flow (older,
+or patchbay-web was down) are reconstructed from their CDR rows, without IVR and group steps.
+Retention follows `PBX_RETENTION_CALLS_DAYS`.
+
 The **event bus** (`events.rs`) adds names from the database and broadcasts `call.incoming`,
 `call.answered`, `call.missed`, `call.ended`, `voicemail.new` and `presence.changed` (from the
 persons' hints and DND). Publishing never blocks; slow consumers lose events.

@@ -3,14 +3,16 @@
 {% block content %}
 {% include "admin_nav.html" %}
 <div class="card">
-  <h2>{{ c.t.s("Calls (last 1000)") }}</h2>
+  <h2>{{ c.t.s("Calls (last 500)") }}</h2>
   <p>{{ c.t.s("Export as CSV:") }} <a href="/admin/log/calls.csv?days=30" download>{{ c.t.s("30 days") }}</a> ·
     <a href="/admin/log/calls.csv?days=90" download>{{ c.t.s("90 days") }}</a> ·
     <a href="/admin/log/calls.csv?days=365" download>{{ c.t.s("1 year") }}</a></p>
-  <div class="tablewrap"><table><tr><th>{{ c.t.s("Time") }}</th><th>{{ c.t.s("From") }}</th><th>{{ c.t.s("To") }}</th><th>{{ c.t.s("Context") }}</th><th>{{ c.t.s("Result") }}</th><th>{{ c.t.s("Duration") }}</th></tr>
-  {% for cl in calls %}<tr><td>{{ cl.calldate }}</td><td>{% match cl.dialable_src() %}{% when Some with (n) %}{% let num = n.to_string() %}{% include "dial.html" %}{% if n.len() > 5 %} <a class="muted" href="/admin/blocklist?number={{ n|urlencode }}" title="{{ c.t.s("Block") }}">⊘</a>{% endif %}{% when None %}{{ cl.src.clone().unwrap_or_default() }}{% endmatch %}</td><td>{% match cl.dialable_dst() %}{% when Some with (n) %}{% let num = n.to_string() %}{% include "dial.html" %}{% when None %}{{ cl.dst.clone().unwrap_or_default() }}{% endmatch %}</td>
-    <td class="muted">{{ cl.dcontext.clone().unwrap_or_default() }}</td><td>{{ cl.disposition.clone().unwrap_or_default() }}</td>
-    <td>{{ cl.billsec.unwrap_or(0) }} s</td></tr>{% endfor %}
+  <p class="muted">{{ c.t.s("One line per call: where it started, the number it came in on, the way through voice menus and groups, the trunk used (with the caller ID sent) and who answered (✓). Calls marked ° are reconstructed from the call records (no recorded flow): voice menus and groups are missing there.") }}</p>
+  <div class="tablewrap"><table class="stacked"><tr><th>{{ c.t.s("Time") }}</th><th>{{ c.t.s("Call flow") }}</th><th>{{ c.t.s("Result") }}</th><th>{{ c.t.s("Duration") }}</th></tr>
+  {% for cl in calls %}<tr><td data-label="{{ c.t.s("Time") }}">{{ cl.when }}{% if !cl.recorded %} <span class="muted" title="{{ c.t.s("reconstructed from the call records") }}">°</span>{% endif %}</td>
+    <td data-label="{{ c.t.s("Call flow") }}" class="flow">{% for h in cl.hops %}{% if !loop.first %} <span class="muted">→</span> {% endif %}<span class="hop">{% match h.num %}{% when Some with (n) %}{% let num = n.to_string() %}{% include "dial.html" %}{% if n.len() > 5 %} <a class="muted" href="/admin/blocklist?number={{ n|urlencode }}" title="{{ c.t.s("Block") }}">⊘</a>{% endif %}{% when None %}{{ h.text }}{% endmatch %}{% if !h.detail.is_empty() %} <small class="muted">{{ h.detail }}</small>{% endif %}</span>{% endfor %}</td>
+    <td data-label="{{ c.t.s("Result") }}">{% if cl.ok %}{{ c.t.s(cl.result) }}{% else %}<span class="muted">{{ c.t.s(cl.result) }}</span>{% endif %}</td>
+    <td data-label="{{ c.t.s("Duration") }}">{{ cl.talk_s }} s</td></tr>{% endfor %}
   </table></div>
 </div>
 <div class="card">

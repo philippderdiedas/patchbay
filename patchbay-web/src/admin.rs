@@ -1255,29 +1255,6 @@ pub async fn status(State(app): State<AppState>, Admin(a): Admin) -> Result<Resp
 // --- Call log and audit --------------------------------------------------------------
 
 #[derive(FromRow)]
-pub struct CdrRow {
-    calldate: String,
-    src: Option<String>,
-    dst: Option<String>,
-    dcontext: Option<String>,
-    disposition: Option<String>,
-    billsec: Option<i32>,
-}
-
-fn dialable(s: &Option<String>) -> Option<String> {
-    s.as_ref().filter(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit() || c == '+')).cloned()
-}
-
-impl CdrRow {
-    fn dialable_src(&self) -> Option<String> {
-        dialable(&self.src)
-    }
-    fn dialable_dst(&self) -> Option<String> {
-        dialable(&self.dst)
-    }
-}
-
-#[derive(FromRow)]
 pub struct AuditRow {
     at: String,
     actor: String,
@@ -1290,7 +1267,7 @@ pub struct AuditRow {
 #[template(path = "admin_log.html")]
 struct LogPage {
     c: Ctx,
-    calls: Vec<CdrRow>,
+    calls: Vec<crate::callflow::CallLine>,
     audit: Vec<AuditRow>,
 }
 
@@ -1358,14 +1335,8 @@ pub async fn log_calls_csv(
 }
 
 pub async fn log(State(app): State<AppState>, Admin(a): Admin) -> Result<Response, AppError> {
-    let calls = sqlx::query_as(
-        "SELECT to_char(calldate, 'DD.MM.YY HH24:MI') AS calldate, src, dst, dcontext,
-                disposition, billsec
-         FROM cdr WHERE dcontext NOT LIKE 'test-%' AND lastapp <> 'AppDial' ORDER BY id DESC LIMIT 1000",
-)
-    .fetch_all(&app.db)
-    .await
-    .map_err(anyhow::Error::from)?;
+    let c = Ctx::new(&app, &a).section("log");
+    let calls = crate::callflow::lines(c.t, &app.db, 500).await?;
     let audit = sqlx::query_as(
         "SELECT to_char(at, 'DD.MM.YY HH24:MI') AS at,
                 COALESCE((SELECT display_name FROM users WHERE kc_subject = a.actor OR 'local:' || id = a.actor LIMIT 1), a.actor) AS actor,
@@ -1375,7 +1346,7 @@ pub async fn log(State(app): State<AppState>, Admin(a): Admin) -> Result<Respons
     .fetch_all(&app.db)
     .await
     .map_err(anyhow::Error::from)?;
-    render(LogPage { c: Ctx::new(&app, &a).section("log"), calls, audit })
+    render(LogPage { c, calls, audit })
 }
 
 #[cfg(test)]

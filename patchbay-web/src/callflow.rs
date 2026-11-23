@@ -127,6 +127,8 @@ pub fn from_flow(t: Tr, names: &Names, when: String, f: &Flow) -> CallLine {
         let name = if f.origin.name.is_empty() || f.origin.name == f.origin.num { String::new() } else { f.origin.name.clone() };
         let detail = [name, format!("{} {tr}", t.s("via"))].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(", ");
         hops.push(external(&f.origin.num, detail));
+    } else if !f.origin.c2c.is_empty() {
+        hops.push(Hop { text: names.internal(&f.origin.c2c), detail: t.s("click-to-call").into(), num: None });
     } else if !f.origin.num.is_empty() {
         hops.push(Hop { text: names.internal(&f.origin.num), detail: String::new(), num: None });
     }
@@ -150,7 +152,7 @@ pub fn from_flow(t: Tr, names: &Names, when: String, f: &Flow) -> CallLine {
     }
     // trunk legs (outbound, forwards to external numbers, mobile phones)
     for d in &f.dials {
-        if names.devices.contains_key(&d.ep) {
+        if !d.is_trunk() || names.devices.contains_key(&d.ep) {
             continue;
         }
         if let Some(tr) = names.trunk(&d.ep) {
@@ -170,7 +172,9 @@ pub fn from_flow(t: Tr, names: &Names, when: String, f: &Flow) -> CallLine {
         hops.push(Hop { text: t.s("voicemail").into(), detail: String::new(), num: None });
     }
     let answered = f.talk_s.is_some();
-    let busy = !answered && f.dials.iter().any(|d| d.status == "BUSY");
+    // busy: a direct call (no person/group/IVR) whose trunk leg was busy; in a group one busy member
+    // does not make the call busy
+    let busy = !answered && f.steps.is_empty() && f.dials.iter().any(|d| d.is_trunk() && d.status == "BUSY");
     CallLine {
         when,
         hops,
@@ -189,10 +193,10 @@ pub struct CdrCall {
     channel: Option<String>,
     src: Option<String>,
     dst: Option<String>,
-    dcontext: Option<String>,
     /// (dstchannel, disposition) of every row
     legs: Vec<String>,
     answered: bool,
+    voicemail: bool,
     billsec: i32,
     flow: Option<serde_json::Value>,
     duration_s: Option<i32>,
@@ -251,17 +255,20 @@ pub fn from_cdr(t: Tr, names: &Names, c: &CdrCall) -> CallLine {
         }
     }
     if let Some(h) = answered_dev.and_then(|ep| names.device(&ep)) {
-        if hops.first().map(|o| o.text != h.text || o.detail != h.detail).unwrap_or(true) {
-            hops.push(Hop { detail: format!("{} ✓", h.detail), ..h });
+        let answered = format!("{} ✓", h.detail);
+        if let Some(step) = hops.iter_mut().skip(1).find(|s| s.text == h.text) {
+            step.detail = answered;
+        } else if hops.first().map(|o| o.text != h.text || o.detail != h.detail).unwrap_or(true) {
+            hops.push(Hop { detail: answered, ..h });
         }
     }
-    if c.dcontext.as_deref() == Some("sub-mailbox") {
+    if c.voicemail {
         hops.push(Hop { text: t.s("voicemail").into(), detail: String::new(), num: None });
     }
     CallLine {
         when: c.when.clone(),
         hops,
-        result: if c.answered { "answered" } else { "not answered" },
+        result: if c.answered { "answered" } else if c.voicemail { "voicemail" } else { "not answered" },
         ok: c.answered,
         talk_s: c.billsec,
         recorded: false,
@@ -277,13 +284,19 @@ pub async fn lines(t: Tr, db: &PgPool, limit: i64) -> anyhow::Result<Vec<CallLin
                   COALESCE((array_agg(channel ORDER BY id) FILTER (WHERE channel NOT LIKE 'Local/%'))[1], (array_agg(channel ORDER BY id))[1]) AS channel,
                   COALESCE((array_agg(src ORDER BY id) FILTER (WHERE channel NOT LIKE 'Local/%'))[1], (array_agg(src ORDER BY id))[1]) AS src,
                   COALESCE((array_agg(dst ORDER BY id) FILTER (WHERE channel NOT LIKE 'Local/%'))[1], (array_agg(dst ORDER BY id))[1]) AS dst,
-                  (array_agg(dcontext ORDER BY id DESC))[1] AS dcontext,
                   array_agg(COALESCE(dstchannel, '') || '|' || COALESCE(disposition, '') ORDER BY id) AS legs,
-                  bool_or(disposition = 'ANSWERED' AND lastapp <> 'Hangup') AS answered, COALESCE(max(billsec), 0) AS billsec
-           FROM cdr WHERE dcontext NOT LIKE 'test-%' AND linkedid IS NOT NULL
+                  -- answered: a real Dial leg (not a Local helper) was answered; announcements, voice
+                  -- menus and the mailbox answer the caller's channel too but are not a conversation
+                  bool_or(disposition = 'ANSWERED' AND COALESCE(dstchannel, '') <> '' AND dstchannel NOT LIKE 'Local/%') AS answered,
+                  bool_or(lastapp = 'VoiceMail') AS voicemail,
+                  COALESCE(max(billsec) FILTER (WHERE disposition = 'ANSWERED' AND COALESCE(dstchannel, '') <> '' AND dstchannel NOT LIKE 'Local/%'), 0) AS billsec
+           FROM cdr
+           -- only the newest rows: grouping the whole table (a year of calls) on every page load is slow
+           WHERE id > (SELECT COALESCE(max(id), 0) FROM cdr) - $1 * 20
+             AND dcontext NOT LIKE 'test-%' AND linkedid IS NOT NULL
            GROUP BY linkedid ORDER BY min(id) DESC LIMIT $1)
-         SELECT c.linkedid, c.when, c.channel, c.src, c.dst, c.dcontext, c.legs, COALESCE(c.answered, false) AS answered,
-                c.billsec, f.flow, f.duration_s, f.talk_s
+         SELECT c.linkedid, c.when, c.channel, c.src, c.dst, c.legs, COALESCE(c.answered, false) AS answered,
+                COALESCE(c.voicemail, false) AS voicemail, c.billsec, f.flow, f.duration_s, f.talk_s
          FROM c LEFT JOIN call_flows f ON f.linkedid = c.linkedid ORDER BY c.first DESC",
     )
     .bind(limit)
@@ -376,9 +389,9 @@ mod tests {
             channel: Some("PJSIP/dev1020-0000001a".into()),
             src: Some("04012345".into()),
             dst: Some("017612345678".into()),
-            dcontext: Some("from-device".into()),
             legs: vec!["PJSIP/sip-5-0000001b|NO ANSWER".into()],
             answered: false,
+            voicemail: false,
             billsec: 0,
             flow: None,
             duration_s: None,

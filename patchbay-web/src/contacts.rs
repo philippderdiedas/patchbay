@@ -46,14 +46,15 @@ impl Contact {
     }
 }
 
-pub async fn contacts_of(db: &sqlx::PgPool, uid: i32, shared_notes: bool) -> Result<Vec<Contact>, AppError> {
+pub async fn contacts_of(db: &sqlx::PgPool, uid: i32, shared_notes: bool, may_phone: bool) -> Result<Vec<Contact>, AppError> {
     Ok(sqlx::query_as(
         "SELECT c.id, c.name, c.organization, c.phone, c.mobile, c.email, c.note,
-                (SELECT count(*) FROM call_notes n WHERE n.e164 IN (c.phone_e164, c.mobile_e164) AND (n.user_id = $1 OR (n.shared AND $2))) AS notes
+                CASE WHEN $3 THEN (SELECT count(*) FROM call_notes n WHERE n.e164 IN (c.phone_e164, c.mobile_e164) AND (n.user_id = $1 OR (n.shared AND $2))) ELSE 0 END AS notes
          FROM contacts c WHERE c.user_id = $1 ORDER BY lower(c.name)",
     )
         .bind(uid)
         .bind(shared_notes)
+        .bind(may_phone)
         .fetch_all(db)
         .await
         .map_err(anyhow::Error::from)?)
@@ -98,7 +99,8 @@ pub async fn contact_edit(State(app): State<AppState>, u: CurrentUser, Path(id):
         .await
         .map_err(anyhow::Error::from)?
         .ok_or(AppError::NotFound)?;
-    let note_numbers = contact_numbers(&app.db, uid, id).await?;
+    // call notes only with phone permission (like the call window)
+    let note_numbers = if u.may_phone { contact_numbers(&app.db, uid, id).await? } else { vec![] };
     let notes = crate::notes::notes_for_numbers(&app, uid, &note_numbers).await?;
     render(ContactPage { c: Ctx::new(&app, &u), k, is_new: false, notes, note_numbers, shared_notes: app.cfg.shared_notes })
 }
@@ -127,7 +129,8 @@ pub struct ContactNoteForm {
 
 /// POST /contacts/{id}/notes: new call note on one of the contact's numbers.
 pub async fn contact_note_create(State(app): State<AppState>, u: CurrentUser, Path(id): Path<i32>, Form(f): Form<ContactNoteForm>) -> Result<Response, AppError> {
-    let uid = u.phone_uid()?;
+    // same permission as the call window's notes (phone permission, not only a person)
+    let uid = crate::companion::uid(&u)?;
     if !contact_numbers(&app.db, uid, id).await?.contains(&f.number) {
         return Err(AppError::BadRequest("Notes only for the contact's external numbers.".into()));
     }
@@ -138,7 +141,7 @@ pub async fn contact_note_create(State(app): State<AppState>, u: CurrentUser, Pa
 
 /// POST /contacts/{id}/notes/{note}/delete: own notes only.
 pub async fn contact_note_delete(State(app): State<AppState>, u: CurrentUser, Path((id, note)): Path<(i32, i32)>) -> Result<Response, AppError> {
-    let uid = u.phone_uid()?;
+    let uid = crate::companion::uid(&u)?;
     let e164: Option<String> = sqlx::query_scalar("DELETE FROM call_notes WHERE id = $1 AND user_id = $2 RETURNING e164")
         .bind(note)
         .bind(uid)

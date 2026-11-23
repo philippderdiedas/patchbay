@@ -115,7 +115,7 @@ form.inline { display: inline; }
 details.inline { display: inline-block; vertical-align: middle; }
 details.inline[open] { display: block; }
 details.inline > summary { cursor: pointer; }
-.flow .hop { display: inline-block; }
+.callflow .hop { display: inline-block; }
 input[type="number"].short { width: 90px; }
 [hidden] { display: none !important; }
 select { max-width: 100%; }

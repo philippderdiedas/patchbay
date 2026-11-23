@@ -61,7 +61,7 @@ pub async fn notes_for_numbers(app: &AppState, uid: i32, numbers: &[String]) -> 
                 to_char(n.updated_at AT TIME ZONE $4, 'DD.MM.YY HH24:MI') AS at
          FROM call_notes n JOIN users u ON u.id = n.user_id
          WHERE n.e164 = ANY($2) AND (n.user_id = $1 OR (n.shared AND $3))
-         ORDER BY n.updated_at DESC LIMIT 100",
+         ORDER BY n.updated_at DESC",
     )
     .bind(uid)
     .bind(numbers)

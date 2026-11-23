@@ -741,6 +741,8 @@ fn de_pairs() -> Vec<(&'static str, &'static str)> {
         ("Notes only for the contact's external numbers.", "Notizen nur zu den externen Nummern des Kontakts."),
         // call flow (admin call log, callflow.rs)
         ("One line per call: where it started, the number it came in on, the way through voice menus and groups, the trunk used (with the caller ID sent) and who answered (✓). Calls marked ° are reconstructed from the call records (no recorded flow): voice menus and groups are missing there.", "Eine Zeile pro Anruf: wo er begann, die Nummer, auf der er ankam, der Weg durch Sprachmenüs und Gruppen, die genutzte Leitung (mit der gesendeten Rufnummer) und wer angenommen hat (✓). Mit ° markierte Anrufe sind aus den Verbindungsdaten rekonstruiert (kein aufgezeichneter Ablauf): Sprachmenüs und Gruppen fehlen dort."),
+        ("Call path", "Anrufverlauf"),
+        ("click-to-call", "Klick-Anruf"),
         ("reconstructed from the call records", "aus den Verbindungsdaten rekonstruiert"),
         ("shows", "zeigt"),
         ("number dialled", "gewählte Nummer"),

@@ -71,6 +71,9 @@ pub struct FlowOrigin {
     pub num: String,
     #[serde(default)]
     pub name: String,
+    /// click-to-call: extension of the person whose phones rang first (Local/<ext>@group-member)
+    #[serde(default)]
+    pub c2c: String,
 }
 
 /// One Dial() leg to a PJSIP endpoint (device or trunk) or IAX2 peer.
@@ -89,6 +92,16 @@ pub struct FlowDial {
     pub status: String,
     #[serde(skip)]
     pub(crate) chan: String,
+    /// when this leg was answered (talk time of calls without a target)
+    #[serde(skip)]
+    pub(crate) answered_at: Option<f64>,
+}
+
+impl FlowDial {
+    /// A leg to a trunk or IAX peer (the dial string names a number), not to a device
+    pub fn is_trunk(&self) -> bool {
+        !self.to.is_empty()
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
@@ -201,7 +214,10 @@ impl Tracker {
                 }
                 self.chan_call.insert(uid.to_string(), lid.to_string());
                 let c = self.calls.entry(lid.to_string()).or_insert_with(|| {
-                    let (ep, chan) = origin_of(get(m, "Channel"));
+                    let ch = get(m, "Channel");
+                    let (ep, chan) = origin_of(ch);
+                    // originate (click-to-call): "Local/1020@group-member-0000001;1"
+                    let c2c = ch.strip_prefix("Local/").and_then(|r| r.split_once("@group-member")).map(|(e, _)| e.to_string()).unwrap_or_default();
                     let p = party(m);
                     Call {
                         id: lid.to_string(),
@@ -212,7 +228,7 @@ impl Tracker {
                         targets: vec![],
                         answered: None,
                         chans: HashSet::new(),
-                        origin: FlowOrigin { ep, chan, exten: get(m, "Exten").to_string(), num: p.number, name: p.name.unwrap_or_default() },
+                        origin: FlowOrigin { ep, chan, exten: get(m, "Exten").to_string(), num: p.number, name: p.name.unwrap_or_default(), c2c },
                         dials: vec![],
                         voicemail: false,
                         answered_by: None,
@@ -277,6 +293,7 @@ impl Tracker {
                         clip: get(m, "CallerIDNum").replace("<unknown>", ""),
                         status: String::new(),
                         chan: dest.to_string(),
+                        answered_at: None,
                     });
                 }
                 if let Some(ep) = pjsip_endpoint(dest) {
@@ -293,6 +310,9 @@ impl Tracker {
                     let dest = get(m, "DestChannel");
                     if let Some(d) = c.dials.iter_mut().rev().find(|d| d.chan == dest) {
                         d.status = status.to_string();
+                        if status == "ANSWER" {
+                            d.answered_at = Some(now);
+                        }
                     }
                 }
                 if status != "ANSWER" {
@@ -375,8 +395,10 @@ impl Tracker {
         if c.targets.is_empty() && c.dials.is_empty() {
             return None;
         }
-        // answered without a target (outbound/internal): the answering leg, if any
-        let answered = c.answered.or_else(|| c.dials.iter().any(|d| d.status == "ANSWER").then_some(c.started));
+        // without a target (outbound, IAX, device numbers) only a trunk leg counts: the own phone
+        // answering a click-to-call is not the callee
+        let trunk_answer = c.dials.iter().find(|d| d.is_trunk() && d.status == "ANSWER");
+        let answered = c.answered.or_else(|| trunk_answer.and_then(|d| d.answered_at));
         Some(Flow {
             linkedid: c.id.clone(),
             started: c.started,
@@ -408,7 +430,7 @@ impl Tracker {
                 .collect(),
             dials: c.dials.clone(),
             voicemail: c.voicemail,
-            answered_by: c.answered_by.clone().or_else(|| c.dials.iter().find(|d| d.status == "ANSWER").map(|d| d.ep.clone())),
+            answered_by: c.answered_by.clone().or_else(|| trunk_answer.map(|d| d.ep.clone())),
         })
     }
 
@@ -594,13 +616,32 @@ Event: DialBegin\nChannel: PJSIP/dev1020-00000001\nCallerIDNum: 04012345\nDestCh
         let f = &flows[0];
         assert_eq!(f.origin.ep, "dev1020");
         assert_eq!(f.origin.exten, "017612345678");
-        assert_eq!(f.dials, vec![FlowDial { ep: "sip-5".into(), to: "017612345678".into(), clip: "04012345".into(), status: "ANSWER".into(), chan: "PJSIP/sip-5-00000002".into() }]);
+        assert_eq!(f.dials.len(), 1);
+        let d = &f.dials[0];
+        assert_eq!((d.ep.as_str(), d.to.as_str(), d.clip.as_str(), d.status.as_str()), ("sip-5", "017612345678", "04012345", "ANSWER"));
         assert_eq!(f.answered_by.as_deref(), Some("sip-5"));
         assert_eq!(f.duration_s, 65);
+        assert_eq!(f.talk_s, Some(60), "talk time from the answer, not from the start");
         // stored JSON round trip (without the internal channel name)
         let back: Flow = serde_json::from_value(serde_json::to_value(f).unwrap()).unwrap();
         assert_eq!(back.dials[0].to, "017612345678");
         assert_eq!(origin_of("IAX2/site124-1234"), (String::new(), "IAX2/site124".to_string()));
+    }
+
+    #[test]
+    fn click_to_call_flow() {
+        // own phone rings first (answered), then the callee over a trunk does not answer
+        let raw = "Event: Newchannel\nChannel: Local/1020@group-member-00000001;1\nCallerIDNum: 017612345678\nUniqueid: 8.1\nLinkedid: 8.1\n\n\
+Event: DialBegin\nChannel: Local/1020@group-member-00000001;2\nDestChannel: PJSIP/dev1020-00000003\nDialString: dev1020\nUniqueid: 8.2\nLinkedid: 8.1\n\n\
+#t 3\nEvent: DialEnd\nDestChannel: PJSIP/dev1020-00000003\nDialStatus: ANSWER\nUniqueid: 8.2\nLinkedid: 8.1\n\n\
+Event: DialBegin\nChannel: PJSIP/dev1020-00000003\nCallerIDNum: 04012345\nDestChannel: PJSIP/sip-5-00000004\nDialString: 017612345678@sip-5\nUniqueid: 8.2\nLinkedid: 8.1\n\n\
+#t 30\nEvent: DialEnd\nDestChannel: PJSIP/sip-5-00000004\nDialStatus: NOANSWER\nUniqueid: 8.2\nLinkedid: 8.1\n\n\
+Event: Hangup\nUniqueid: 8.1\n";
+        let (_, flows) = replay_flows(raw);
+        let f = &flows[0];
+        assert_eq!(f.origin.c2c, "1020");
+        assert_eq!(f.talk_s, None, "the own phone answering is not an answered call");
+        assert_eq!(f.answered_by, None);
     }
 
     fn names(evs: &[PbxEvent]) -> Vec<&'static str> {

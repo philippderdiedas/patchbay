@@ -635,9 +635,16 @@ fn collection(href: &str, name: &str, book: Option<&str>, write: bool) -> String
     )
 }
 
-fn ctag(cards: &[Card]) -> String {
+/// Collection tag: changes with any card. `epoch` (setting carddav_epoch) changes all of them at
+/// once: clients that only compare the ctag (Linphone) then fetch the etags again and load what is
+/// missing ("force resync").
+fn ctag(cards: &[Card], epoch: &str) -> String {
     let all: String = cards.iter().map(|c| format!("{}{}", c.res, c.etag())).collect();
-    md5_hex(&all)[..16].to_string()
+    md5_hex(&format!("{epoch}{all}"))[..16].to_string()
+}
+
+async fn epoch(app: &AppState) -> String {
+    sqlx::query_scalar("SELECT value FROM settings WHERE key = 'carddav_epoch'").fetch_optional(&app.db).await.ok().flatten().unwrap_or_default()
 }
 
 fn card_response(coll: &str, c: &Card, with_data: bool) -> String {
@@ -758,9 +765,10 @@ async fn handle_inner(app: &AppState, method: Method, uri: Uri, headers: &Header
     if method.as_str() == "PROPFIND" && path == BASE {
         let mut r = collection(BASE, "Telefonie", None, false);
         if depth != "0" {
-            r += &collection(COLLEAGUES, &app.cfg.site_title, Some(&ctag(&colleagues(app).await?)), false);
-            r += &collection(CONTACTS, t.s("My contacts"), Some(&ctag(&personal(app, me.uid).await?)), me.write);
-            r += &collection(SERVICES, t.s("Services"), Some(&ctag(&services(app, t).await?)), false);
+            let ep = epoch(app).await;
+            r += &collection(COLLEAGUES, &app.cfg.site_title, Some(&ctag(&colleagues(app).await?, &ep)), false);
+            r += &collection(CONTACTS, t.s("My contacts"), Some(&ctag(&personal(app, me.uid).await?, &ep)), me.write);
+            r += &collection(SERVICES, t.s("Services"), Some(&ctag(&services(app, t).await?, &ep)), false);
         }
         return Ok(multistatus(&r));
     }
@@ -792,7 +800,7 @@ async fn handle_inner(app: &AppState, method: Method, uri: Uri, headers: &Header
     };
     match (method.as_str(), res.as_deref()) {
         ("PROPFIND", None) => {
-            let mut r = collection(coll, name, Some(&ctag(&cards)), write);
+            let mut r = collection(coll, name, Some(&ctag(&cards, &epoch(app).await)), write);
             if depth != "0" {
                 for c in &cards {
                     r += &card_response(coll, c, false);
@@ -1038,7 +1046,11 @@ NOTE:Kunde seit 2020\\, wichtig\r\nPHOTO;ENCODING=b;TYPE=JPEG:AAAA\r\nUID:abc-12
         assert_eq!(f.name, "Mailbox (*97)");
         assert_eq!(f.phone.as_deref(), Some("*97"));
         let again = service_cards(&crate::help::fixed_services(&emergency, Tr(Lang::De)), "Dienste", "voip.example");
-        assert_eq!(ctag(&cards), ctag(&again));
+        assert_eq!(ctag(&cards, ""), ctag(&again, ""));
+        // force resync: another epoch changes the ctag, none keeps the old one
+        assert_ne!(ctag(&cards, ""), ctag(&cards, "1"));
+        let all: String = cards.iter().map(|c| format!("{}{}", c.res, c.etag())).collect();
+        assert_eq!(ctag(&cards, ""), md5_hex(&all)[..16]);
         assert_eq!(vm.etag(), again.iter().find(|c| c.res == "svc-s97.vcf").unwrap().etag());
         // '#' is percent-encoded in the SIP URI, kept in TEL
         let fwd = cards.iter().find(|c| c.res == "svc-h21h.vcf").unwrap();
@@ -1049,9 +1061,9 @@ NOTE:Kunde seit 2020\\, wichtig\r\nPHOTO;ENCODING=b;TYPE=JPEG:AAAA\r\nUID:abc-12
         // other language or content -> other etag and ctag
         let en = service_cards(&crate::help::fixed_services(&emergency, Tr(Lang::En)), "Services", "voip.example");
         assert!(en.iter().any(|c| c.vcard.contains("FN:Voicemail (*97)\r\n")));
-        assert_ne!(ctag(&cards), ctag(&en));
+        assert_ne!(ctag(&cards, ""), ctag(&en, ""));
         let more = service_cards(&crate::help::fixed_services(&["110".into(), "112".into()], Tr(Lang::De)), "Dienste", "voip.example");
-        assert_ne!(ctag(&cards), ctag(&more));
+        assert_ne!(ctag(&cards, ""), ctag(&more, ""));
         // escaping of names from the database
         let s = crate::help::Service {
             uid: "svc-8000".into(),

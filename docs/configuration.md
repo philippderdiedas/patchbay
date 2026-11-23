@@ -150,6 +150,11 @@ changes, so clients sync incrementally. The feature-code list lives in `patchbay
 (`FEATURE_CODES`) and drives both the help page and this address book. Feature codes only work
 from the user's own device (the dialplan identifies the caller by its SIP endpoint).
 
+
+Force a resync on all clients (e.g. a Linphone that keeps an empty list): change the setting
+`carddav_epoch`, e.g. `INSERT INTO settings VALUES ('carddav_epoch', now()::text) ON CONFLICT (key) DO
+UPDATE SET value = EXCLUDED.value;`. All collection tags (ctag) change; clients compare the etags again and
+load what they miss.
 ## Public holidays
 
 Time profiles with public holidays switched on use the site's holiday calendar (Admin → Time

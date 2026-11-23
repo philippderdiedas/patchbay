@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}{{ c.t.s("Merge contacts") }}{% endblock %}
+{% block content %}
+<form method="post" action="/contacts/merge" class="card">
+  <h2>{{ c.t.s("Merge contacts") }}</h2>
+  <input type="hidden" name="a" value="{{ a.id }}"><input type="hidden" name="b" value="{{ b.id }}"><input type="hidden" name="back" value="{{ back }}">
+  <p>{{ c.t.s("Choose for each field which value to keep, and which entry remains. The other entry is deleted (a shared one goes to the bin). Call notes stay with their numbers.") }}</p>
+  <div class="tablewrap"><table class="stacked">
+    <tr><th></th><th>{% if a.shared %}{{ c.t.s("Shared phone book") }}{% else %}{{ c.t.s("My contacts") }}{% endif %}</th><th>{% if b.shared %}{{ c.t.s("Shared phone book") }}{% else %}{{ c.t.s("My contacts") }}{% endif %}</th></tr>
+    <tr><th>{{ c.t.s("Remains") }}</th>
+      <td><label><input type="radio" name="keep" value="{{ a.id }}"{% if !keep_a %} disabled{% else %} checked{% endif %}> {{ a.name }}</label></td>
+      <td><label><input type="radio" name="keep" value="{{ b.id }}"{% if !keep_b %} disabled{% else if !keep_a %} checked{% endif %}> {{ b.name }}</label></td></tr>
+    {% for (label, field, va, vb) in self.rows() %}
+    <tr><th>{{ c.t.s(label) }}</th>
+      <td data-label="A"><label><input type="radio" name="{{ field }}" value="a"{% if !va.is_empty() || vb.is_empty() %} checked{% endif %}> {% if va.is_empty() %}<span class="muted">–</span>{% else %}{{ va }}{% endif %}</label></td>
+      <td data-label="B"><label><input type="radio" name="{{ field }}" value="b"{% if va.is_empty() && !vb.is_empty() %} checked{% endif %}> {% if vb.is_empty() %}<span class="muted">–</span>{% else %}{{ vb }}{% endif %}</label></td></tr>
+    {% endfor %}
+  </table></div>
+  {% if synced_a || synced_b %}<p class="warn">{{ c.t.s("At least one entry came from a phone (CardDAV). Data the phone book does not show (photo, address, birthday) is lost with the entry that gets deleted.") }}</p>{% endif %}
+  <p class="row"><button class="primary">{{ c.t.s("Merge") }}</button> <a href="{{ back }}">{{ c.t.s("Cancel") }}</a></p>
+</form>
+{% endblock %}

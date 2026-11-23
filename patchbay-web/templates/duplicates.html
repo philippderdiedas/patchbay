@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}{{ c.t.s("Duplicates") }}{% endblock %}
+{% block content %}
+<div class="card">
+  <h2>{{ c.t.s("Duplicates") }}</h2>
+  <p class="muted">{% if shared_on %}{{ c.t.s("Compares your contacts with each other and with the shared phone book.") }}{% else %}{{ c.t.s("Compares your contacts with each other.") }}{% endif %}</p>
+  <form method="get" action="/contacts/duplicates" class="row">
+    <input type="hidden" name="sent" value="1">
+    <label><input type="checkbox" name="numbers"{% if numbers %} checked{% endif %}> {{ c.t.s("same phone number") }}</label>
+    <label><input type="checkbox" name="email"{% if email %} checked{% endif %}> {{ c.t.s("same e-mail") }}</label>
+    <label><input type="checkbox" name="names"{% if names %} checked{% endif %}> {{ c.t.s("similar names") }}</label>
+    <button>{{ c.t.s("Search") }}</button>
+  </form>
+</div>
+<div class="card">
+  {% if pairs.is_empty() %}<p>{{ c.t.s("No duplicates found.") }}</p>{% endif %}
+  {% for p in pairs %}
+  <div class="dupe">
+    <p><small class="muted">{% for r in p.reasons %}{% if !loop.first %} · {% endif %}{{ c.t.s(r) }}{% endfor %}</small></p>
+    <div class="dupe-pair">
+      {% for (k, edit) in p.sides() %}
+      <div class="dupe-side">
+        <a href="/contacts/{{ k.id }}"><b>{{ k.name }}</b></a>{% if k.shared %} <span class="muted">· {{ c.t.s("Shared phone book") }}</span>{% endif %}<br>
+        {% if !k.org().is_empty() %}<small>{{ k.org() }}</small><br>{% endif %}
+        <small>{{ k.phone_str() }}{% if !k.mobile_str().is_empty() %} · {{ k.mobile_str() }}{% endif %}{% if !k.email_str().is_empty() %} · {{ k.email_str() }}{% endif %}</small><br>
+        {% if edit.to_owned() %}<form class="inline" method="post" action="/contacts/{{ k.id }}/delete" data-confirm="{% if k.shared %}{{ c.t.s("Delete for everyone? An admin can restore it for 30 days.") }}{% else %}{{ c.t.s("Really delete?") }}{% endif %}">
+          <input type="hidden" name="back" value="{{ back }}"><button class="danger">{{ c.t.s("Delete this one") }}</button></form>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    <div class="row">
+      {% if p.edit_a && p.edit_b %}<form class="inline" method="get" action="/contacts/merge"><input type="hidden" name="a" value="{{ p.a.id }}"><input type="hidden" name="b" value="{{ p.b.id }}"><input type="hidden" name="back" value="{{ back }}"><button class="primary">{{ c.t.s("Merge…") }}</button></form>{% endif %}
+      <form class="inline" method="post" action="/contacts/duplicates/ignore">
+        <input type="hidden" name="a" value="{{ p.a.id }}"><input type="hidden" name="b" value="{{ p.b.id }}"><input type="hidden" name="back" value="{{ back }}">
+        <button>{{ c.t.s("Not a duplicate") }}</button></form>
+    </div>
+  </div>
+  {% endfor %}
+  {% if more %}<p class="muted">{{ c.t.s("More pairs follow once these are resolved.") }}</p>{% endif %}
+</div>
+{% if !ignored.is_empty() %}
+<div class="card">
+  <h3>{{ c.t.s("Marked as not a duplicate") }}</h3>
+  <div class="tablewrap"><table>
+  {% for (a, b) in ignored %}
+    <tr><td>{{ a.name }}</td><td>{{ b.name }}</td><td><form class="inline" method="post" action="/contacts/duplicates/unignore">
+      <input type="hidden" name="a" value="{{ a.id }}"><input type="hidden" name="b" value="{{ b.id }}"><input type="hidden" name="back" value="{{ back }}">
+      <button>{{ c.t.s("Undo") }}</button></form></td></tr>
+  {% endfor %}
+  </table></div>
+</div>
+{% endif %}
+<p><a href="/phonebook#contacts">{{ c.t.s("Back to the phone book") }}</a></p>
+{% endblock %}

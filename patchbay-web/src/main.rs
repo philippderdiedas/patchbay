@@ -18,6 +18,7 @@ mod csv;
 mod crypto;
 mod custom;
 mod db;
+mod dupes;
 mod events;
 mod pages;
 mod provision;
@@ -352,6 +353,10 @@ async fn main() -> Result<()> {
         .route("/me/blocklist/{id}/delete", post(blocklist::personal_delete))
         .route("/me/noanswer", post(selfservice::ui_noanswer))
         .route("/contacts/new", get(contacts::contact_new).post(contacts::contact_create))
+        .route("/contacts/duplicates", get(dupes::page))
+        .route("/contacts/duplicates/ignore", post(dupes::ignore))
+        .route("/contacts/duplicates/unignore", post(dupes::unignore))
+        .route("/contacts/merge", get(dupes::merge_page).post(dupes::merge))
         .route("/contacts/{id}", get(contacts::contact_edit).post(contacts::contact_save))
         .route("/contacts/{id}/delete", post(contacts::contact_delete))
         .route("/contacts/{id}/notes", post(contacts::contact_note_create))

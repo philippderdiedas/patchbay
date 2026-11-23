@@ -130,6 +130,8 @@ fn digest_params(s: &str) -> std::collections::HashMap<String, String> {
 struct Principal {
     uid: i32,
     write: bool,
+    /// phone permission (users.phone_allowed): required for the shared phone book
+    phone: bool,
 }
 
 /// A credential that may match a login name: (user id, ha1, app password id).
@@ -207,7 +209,14 @@ async fn authenticate(app: &AppState, method: &Method, headers: &HeaderMap) -> O
             .execute(&app.db)
             .await;
     }
-    Some(Principal { uid, write: token.is_some() })
+    let phone: bool = sqlx::query_scalar("SELECT phone_allowed AND enabled FROM users WHERE id = $1 AND deleted_at IS NULL")
+        .bind(uid)
+        .fetch_optional(&app.db)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or(false);
+    Some(Principal { uid, write: token.is_some(), phone })
 }
 
 // --- vCards -------------------------------------------------------------------------------------
@@ -597,9 +606,9 @@ async fn owned(app: &AppState, owner: Owner) -> anyhow::Result<Vec<Card>> {
     Ok(rows.into_iter().map(ContactRow::card).collect())
 }
 
-/// The shared phone book (none while PBX_SHARED_CONTACTS=off)
-async fn shared(app: &AppState) -> anyhow::Result<Vec<Card>> {
-    if !app.cfg.shared_contacts.on() {
+/// The shared phone book (none while PBX_SHARED_CONTACTS=off or without phone permission)
+async fn shared(app: &AppState, me: &Principal) -> anyhow::Result<Vec<Card>> {
+    if !app.cfg.shared_contacts.on() || !me.phone {
         return Ok(vec![]);
     }
     owned(app, Owner::Shared).await
@@ -749,6 +758,9 @@ fn valid_res(res: &str) -> bool {
         && !(res.starts_with('u') && res.ends_with(".vcf") && res[1..res.len() - 4].chars().all(|c| c.is_ascii_digit()))
         && !res.starts_with("svc-")
         && !res.starts_with('.')
+        // c<id>.vcf names cards without a client name (web UI, restored entries): a client must not
+        // take such a name, it would collide with another contact
+        && !(res.starts_with('c') && res.ends_with(".vcf") && res.len() > 5 && res[1..res.len() - 4].chars().all(|c| c.is_ascii_digit()))
 }
 
 // --- Handler ------------------------------------------------------------------------------------
@@ -808,14 +820,14 @@ async fn handle_inner(app: &AppState, method: Method, uri: Uri, headers: &Header
             r += &collection(COLLEAGUES, &app.cfg.site_title, Some(&ctag(&colleagues(app).await?, &ep)), false);
             r += &collection(CONTACTS, t.s("My contacts"), Some(&ctag(&personal(app, me.uid).await?, &ep)), me.write);
             r += &collection(SERVICES, t.s("Services"), Some(&ctag(&services(app, t).await?, &ep)), false);
-            if app.cfg.shared_contacts.on() {
-                r += &collection(SHARED, t.s("Shared phone book"), Some(&ctag(&shared(app).await?, &ep)), shared_write(app, &me));
+            if app.cfg.shared_contacts.on() && me.phone {
+                r += &collection(SHARED, t.s("Shared phone book"), Some(&ctag(&shared(app, &me).await?, &ep)), shared_write(app, &me));
             }
         }
         return Ok(multistatus(&r));
     }
     let Some(coll) = coll else { return status(StatusCode::NOT_FOUND) };
-    if coll == SHARED && !app.cfg.shared_contacts.on() {
+    if coll == SHARED && !(app.cfg.shared_contacts.on() && me.phone) {
         return status(StatusCode::NOT_FOUND);
     }
 
@@ -832,11 +844,11 @@ async fn handle_inner(app: &AppState, method: Method, uri: Uri, headers: &Header
         COLLEAGUES => colleagues(app).await?,
         CONTACTS => personal(app, me.uid).await?,
         SERVICES => services(app, t).await?,
-        SHARED => shared(app).await?,
+        SHARED => shared(app, &me).await?,
         _ => {
             let mut c = colleagues(app).await?;
             c.extend(personal(app, me.uid).await?);
-            c.extend(shared(app).await?);
+            c.extend(shared(app, &me).await?);
             c.extend(services(app, t).await?);
             c
         }
@@ -917,19 +929,23 @@ fn precondition_ok(headers: &HeaderMap, current: Option<&str>) -> bool {
 /// May this login change the shared phone book over CardDAV: an app password, and everyone may edit
 /// (PBX_SHARED_CONTACTS=write). With "read" only admins edit, in the web UI.
 fn shared_write(app: &AppState, me: &Principal) -> bool {
-    me.write && app.cfg.shared_contacts == crate::config::SharedContacts::Write
+    me.write && me.phone && app.cfg.shared_contacts == crate::config::SharedContacts::Write
 }
 
 async fn put_contact(app: &AppState, me: &Principal, owner: Owner, res: Option<&str>, headers: &HeaderMap, body: String) -> anyhow::Result<Response> {
     if !me.write || (owner == Owner::Shared && !shared_write(app, me)) {
         return status(StatusCode::FORBIDDEN);
     }
-    let Some(res) = res.filter(|r| valid_res(r)) else { return status(StatusCode::FORBIDDEN) };
+    let Some(res) = res.filter(|r| r.len() <= 200 && !r.is_empty()) else { return status(StatusCode::FORBIDDEN) };
     if body.len() > MAX_CARD {
         return status(StatusCode::PAYLOAD_TOO_LARGE);
     }
     let Some(f) = parse_vcard(&body) else { return status(StatusCode::UNSUPPORTED_MEDIA_TYPE) };
     let existing = contact_by_res(app, owner, res).await?;
+    // names of new cards are checked; an existing card keeps the name it has (also c<id>.vcf)
+    if existing.is_none() && !valid_res(res) {
+        return status(StatusCode::FORBIDDEN);
+    }
     let cur_etag = existing.as_ref().map(|r| r.clone().card().etag());
     if !precondition_ok(headers, cur_etag.as_deref()) {
         return status(StatusCode::PRECONDITION_FAILED);
@@ -1111,7 +1127,9 @@ NOTE:Kunde seit 2020\\, wichtig\r\nPHOTO;ENCODING=b;TYPE=JPEG:AAAA\r\nUID:abc-12
         assert!(!precondition_ok(&h, Some("\"b\"")));
         assert!(!precondition_ok(&h, None));
         assert!(valid_res("0F3A-11.vcf"));
-        assert!(valid_res("c12.vcf"));
+        // reserved for cards without a client name; an existing one keeps it on PUT (put_contact)
+        assert!(!valid_res("c12.vcf"));
+        assert!(valid_res("c12x.vcf"));
         assert!(!valid_res("u12.vcf"));
         assert!(!valid_res("../x"));
         assert!(!valid_res(".hidden"));

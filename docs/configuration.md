@@ -159,6 +159,12 @@ moves an entry to a bin for 30 days, where admins restore it (phone book page); 
 afterwards. Own contacts can be moved there, shared ones copied to the own contacts. Caller names use
 the person's own contacts first, then the shared phone book. It is also part of `/carddav/book/`.
 
+**Duplicates** (phone book → "Find duplicates"): compares the person's own contacts with each other
+and with the shared phone book by phone number (E.164; internal numbers as digits), e-mail and similar
+names (same words, or up to two typos), each switchable. Per pair: merge (choose each field and the
+entry that remains; the other is deleted, a shared one goes to the bin), delete one, or "not a
+duplicate" (remembered per person, undone on the same page). Merging needs edit rights on both entries.
+
 Force a resync on all clients (e.g. a Linphone that keeps an empty list): change the setting
 `carddav_epoch`, e.g. `INSERT INTO settings VALUES ('carddav_epoch', now()::text) ON CONFLICT (key) DO
 UPDATE SET value = EXCLUDED.value;`. All collection tags (ctag) change; clients compare the etags again and

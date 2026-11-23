@@ -99,10 +99,11 @@ pub async fn contacts_of(app: &AppState, uid: i32, may_phone: bool) -> Result<Ve
 }
 
 /// The shared phone book (empty while PBX_SHARED_CONTACTS=off).
-pub async fn shared_contacts(app: &AppState, uid: i32, may_phone: bool) -> Result<Vec<Contact>, AppError> {
-    if !app.cfg.shared_contacts.on() {
+pub async fn shared_contacts(app: &AppState, u: &CurrentUser, uid: i32) -> Result<Vec<Contact>, AppError> {
+    if !shared_access(app, u).0 {
         return Ok(vec![]);
     }
+    let may_phone = u.may_phone;
     Ok(sqlx::query_as(&format!("SELECT {} FROM contacts c WHERE c.user_id IS NULL AND c.deleted_at IS NULL ORDER BY lower(c.name)", contact_cols(2, 3, 1, 4)))
         .bind(uid)
         .bind(&app.cfg.timezone)
@@ -128,7 +129,7 @@ pub async fn shared_bin(app: &AppState) -> Result<Vec<Contact>, AppError> {
 }
 
 /// A contact the viewer may see: own, or shared while the phone book is on (not in the bin).
-async fn load(app: &AppState, uid: i32, id: i32) -> Result<Contact, AppError> {
+pub(crate) async fn load(app: &AppState, u: &CurrentUser, uid: i32, id: i32) -> Result<Contact, AppError> {
     sqlx::query_as(&format!(
         "SELECT {} FROM contacts c WHERE c.id = $5 AND (c.user_id = $1 OR ($6 AND c.user_id IS NULL AND c.deleted_at IS NULL))",
         contact_cols(2, 3, 1, 4)
@@ -138,15 +139,22 @@ async fn load(app: &AppState, uid: i32, id: i32) -> Result<Contact, AppError> {
     .bind(false)
     .bind(false)
     .bind(id)
-    .bind(app.cfg.shared_contacts.on())
+    .bind(shared_access(app, u).0)
     .fetch_optional(&app.db)
     .await
     .map_err(anyhow::Error::from)?
     .ok_or(AppError::NotFound)
 }
 
-fn may_edit(app: &AppState, u: &CurrentUser, k: &Contact) -> bool {
-    !k.shared || app.cfg.shared_contacts.may_edit(u.is_admin)
+/// Shared phone book for this user: (may read, may edit). Phone permission is required ("everyone
+/// with phone access"); admins always see it.
+pub(crate) fn shared_access(app: &AppState, u: &CurrentUser) -> (bool, bool) {
+    let read = app.cfg.shared_contacts.on() && (u.may_phone || u.is_admin);
+    (read, read && app.cfg.shared_contacts.may_edit(u.is_admin))
+}
+
+pub(crate) fn may_edit(app: &AppState, u: &CurrentUser, k: &Contact) -> bool {
+    !k.shared || shared_access(app, u).1
 }
 
 #[derive(Template)]
@@ -186,7 +194,7 @@ pub async fn contact_new(State(app): State<AppState>, u: CurrentUser, axum::extr
     u.phone_uid()?;
     let phone: String = p.phone.chars().filter(|c| c.is_ascii_digit() || *c == '+').take(20).collect();
     let name: String = p.name.chars().filter(|c| !c.is_control()).take(80).collect();
-    let offer_shared = app.cfg.shared_contacts.may_edit(u.is_admin);
+    let offer_shared = shared_access(&app, &u).1;
     let k = Contact { phone: Some(phone).filter(|s| !s.is_empty()), name, shared: offer_shared && p.scope == "shared", ..Default::default() };
     render(ContactPage {
         c: Ctx::new(&app, &u),
@@ -204,16 +212,16 @@ pub async fn contact_new(State(app): State<AppState>, u: CurrentUser, axum::extr
 
 pub async fn contact_edit(State(app): State<AppState>, u: CurrentUser, Path(id): Path<i32>) -> Result<Response, AppError> {
     let uid = u.phone_uid()?;
-    let k = load(&app, uid, id).await?;
+    let k = load(&app, &u, uid, id).await?;
     // call notes only with phone permission (like the call window)
-    let note_numbers = if u.may_phone { contact_numbers(&app, uid, id).await? } else { vec![] };
+    let note_numbers = if u.may_phone { contact_numbers(&app, &u, uid, id).await? } else { vec![] };
     let notes = crate::notes::notes_for_numbers(&app, uid, &note_numbers).await?;
     let editable = may_edit(&app, &u, &k);
     render(ContactPage {
         c: Ctx::new(&app, &u),
         editable,
         offer_shared: false,
-        may_share: !k.shared && app.cfg.shared_contacts.may_edit(u.is_admin),
+        may_share: !k.shared && shared_access(&app, &u).1,
         may_copy: k.shared,
         k,
         is_new: false,
@@ -224,14 +232,14 @@ pub async fn contact_edit(State(app): State<AppState>, u: CurrentUser, Path(id):
 }
 
 /// External numbers (E.164) of a contact the viewer may see.
-async fn contact_numbers(app: &AppState, uid: i32, id: i32) -> Result<Vec<String>, AppError> {
+async fn contact_numbers(app: &AppState, u: &CurrentUser, uid: i32, id: i32) -> Result<Vec<String>, AppError> {
     let row: Option<(Option<String>, Option<String>)> = sqlx::query_as(
         "SELECT phone_e164, mobile_e164 FROM contacts
          WHERE id = $1 AND (user_id = $2 OR ($3 AND user_id IS NULL AND deleted_at IS NULL))",
     )
     .bind(id)
     .bind(uid)
-    .bind(app.cfg.shared_contacts.on())
+    .bind(shared_access(app, u).0)
     .fetch_optional(&app.db)
     .await
     .map_err(anyhow::Error::from)?;
@@ -253,7 +261,7 @@ pub struct ContactNoteForm {
 pub async fn contact_note_create(State(app): State<AppState>, u: CurrentUser, Path(id): Path<i32>, Form(f): Form<ContactNoteForm>) -> Result<Response, AppError> {
     // same permission as the call window's notes (phone permission, not only a person)
     let uid = crate::companion::uid(&u)?;
-    if !contact_numbers(&app, uid, id).await?.contains(&f.number) {
+    if !contact_numbers(&app, &u, uid, id).await?.contains(&f.number) {
         return Err(AppError::BadRequest("Notes only for the contact's external numbers.".into()));
     }
     let form = crate::notes::NoteForm { number: f.number, body: f.body, shared: f.shared };
@@ -293,13 +301,13 @@ pub struct ContactForm {
     scope: String,
 }
 
-fn opt(s: &str, max: usize) -> Option<String> {
+pub(crate) fn opt(s: &str, max: usize) -> Option<String> {
     let s = s.trim();
     (!s.is_empty()).then(|| s.chars().take(max).collect())
 }
 
 /// Phone numbers: external numbers are stored as typed plus E.164 for matching; short internal numbers as digits.
-fn number(label: &str, s: &str) -> Result<(Option<String>, Option<String>), AppError> {
+pub(crate) fn number(label: &str, s: &str) -> Result<(Option<String>, Option<String>), AppError> {
     let Some(v) = opt(s, 40) else { return Ok((None, None)) };
     if !v.chars().all(|c| c.is_ascii_digit() || " +-/()".contains(c)) {
         return Err(AppError::BadRequest(format!("{label}: only digits, spaces and + - / ( ).")));
@@ -323,7 +331,7 @@ pub async fn contact_save(State(app): State<AppState>, u: CurrentUser, Path(id):
     let (mobile, mobile_e164) = number("Mobile", &f.mobile)?;
     let existing = match id.as_str() {
         "new" => None,
-        s => Some(load(&app, uid, s.parse().map_err(|_| AppError::NotFound)?).await?),
+        s => Some(load(&app, &u, uid, s.parse().map_err(|_| AppError::NotFound)?).await?),
     };
     let shared = match &existing {
         Some(k) => {
@@ -332,7 +340,7 @@ pub async fn contact_save(State(app): State<AppState>, u: CurrentUser, Path(id):
             }
             k.shared
         }
-        None => f.scope == "shared" && app.cfg.shared_contacts.may_edit(u.is_admin),
+        None => f.scope == "shared" && shared_access(&app, &u).1,
     };
     // Contacts synced from a phone (CardDAV) keep their stored card; the edit is applied to it.
     let synced = match &existing {
@@ -397,31 +405,95 @@ pub async fn contact_create(state: State<AppState>, u: CurrentUser, form: Form<C
     contact_save(state, u, Path("new".to_string()), form).await
 }
 
+#[derive(Deserialize, Default)]
+pub struct DeleteForm {
+    /// "dupes": back to the duplicate finder (with its criteria in `q`)
+    #[serde(default)]
+    back: String,
+}
+
 /// Personal contacts are deleted; shared ones go to the bin.
-pub async fn contact_delete(State(app): State<AppState>, u: CurrentUser, Path(id): Path<i32>) -> Result<Response, AppError> {
+pub async fn contact_delete(State(app): State<AppState>, u: CurrentUser, Path(id): Path<i32>, Form(form): Form<DeleteForm>) -> Result<Response, AppError> {
     let uid = u.phone_uid()?;
-    let k = load(&app, uid, id).await?;
+    let k = load(&app, &u, uid, id).await?;
     if !may_edit(&app, &u, &k) {
         return Err(AppError::Forbidden("Only admins change the shared phone book here.".into()));
     }
+    remove(&app, &u, uid, &k).await?;
+    let to = if form.back.starts_with("/contacts/duplicates") { crate::dupes::back_to(&form.back) } else { back(k.shared).to_string() };
+    Ok(Redirect::to(&to).into_response())
+}
+
+/// Deletes an own contact, or moves a shared one to the bin (the caller checked `may_edit`).
+pub(crate) async fn remove(app: &AppState, u: &CurrentUser, uid: i32, k: &Contact) -> Result<(), AppError> {
     if k.shared {
         sqlx::query("UPDATE contacts SET deleted_at = now(), deleted_by = $2 WHERE id = $1 AND user_id IS NULL AND deleted_at IS NULL")
-            .bind(id)
+            .bind(k.id)
             .bind(uid)
             .execute(&app.db)
             .await
             .map_err(anyhow::Error::from)?;
-        crate::db::audit(&app.db, &u.session.sub, "contact.shared.delete", &format!("contact:{id}"), serde_json::json!({"name": k.name})).await?;
+        crate::db::audit(&app.db, &u.session.sub, "contact.shared.delete", &format!("contact:{}", k.id), serde_json::json!({"name": k.name})).await?;
     } else {
-        sqlx::query("DELETE FROM contacts WHERE id = $1 AND user_id = $2").bind(id).bind(uid).execute(&app.db).await.map_err(anyhow::Error::from)?;
+        sqlx::query("DELETE FROM contacts WHERE id = $1 AND user_id = $2").bind(k.id).bind(uid).execute(&app.db).await.map_err(anyhow::Error::from)?;
     }
-    Ok(Redirect::to(back(k.shared)).into_response())
+    Ok(())
+}
+
+/// New values for an existing contact the viewer may change (merge); a card synced from a phone is
+/// patched like an edit in the form.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn update_fields(
+    app: &AppState,
+    uid: i32,
+    k: &Contact,
+    name: &str,
+    organization: &str,
+    phone: &str,
+    mobile: &str,
+    email: &str,
+    note: &str,
+) -> Result<(), AppError> {
+    let name = opt(name, 80).ok_or_else(|| AppError::BadRequest("Name missing.".into()))?;
+    let (phone, phone_e164) = number("Phone", phone)?;
+    let (mobile, mobile_e164) = number("Mobile", mobile)?;
+    let fields = crate::carddav::Fields {
+        name: name.clone(),
+        organization: opt(organization, 80),
+        phone: phone.clone(),
+        mobile: mobile.clone(),
+        email: opt(email, 120),
+        note: opt(note, 500),
+    };
+    let synced = crate::carddav::contact_card(&app.db, (!k.shared).then_some(uid), k.id).await?.and_then(|(f, v)| v.map(|v| (f, v)));
+    let vcard = synced.map(|(old, v)| crate::carddav::patch_vcard(&v, &old, &fields));
+    sqlx::query(
+        "UPDATE contacts SET name = $3, organization = $4, phone = $5, phone_e164 = $6, mobile = $7, mobile_e164 = $8,
+                email = $9, note = $10, vcard = COALESCE($11, vcard), updated_at = now(), updated_by = $2
+         WHERE id = $1 AND (user_id = $2 OR ($12 AND user_id IS NULL AND deleted_at IS NULL))",
+    )
+    .bind(k.id)
+    .bind(uid)
+    .bind(&name)
+    .bind(&fields.organization)
+    .bind(&phone)
+    .bind(&phone_e164)
+    .bind(&mobile)
+    .bind(&mobile_e164)
+    .bind(&fields.email)
+    .bind(&fields.note)
+    .bind(vcard)
+    .bind(k.shared)
+    .execute(&app.db)
+    .await
+    .map_err(anyhow::Error::from)?;
+    Ok(())
 }
 
 /// POST /contacts/{id}/share: an own contact moves to the shared phone book.
 pub async fn contact_share(State(app): State<AppState>, u: CurrentUser, Path(id): Path<i32>) -> Result<Response, AppError> {
     let uid = u.phone_uid()?;
-    if !app.cfg.shared_contacts.may_edit(u.is_admin) {
+    if !shared_access(&app, &u).1 {
         return Err(AppError::Forbidden("Only admins change the shared phone book here.".into()));
     }
     let count: i64 = sqlx::query_scalar("SELECT count(*) FROM contacts WHERE user_id IS NULL AND deleted_at IS NULL")
@@ -433,7 +505,9 @@ pub async fn contact_share(State(app): State<AppState>, u: CurrentUser, Path(id)
     }
     // the CardDAV name goes: it identified the card in the person's own book
     let name: Option<String> = sqlx::query_scalar(
-        "UPDATE contacts SET user_id = NULL, dav_name = NULL, created_by = COALESCE(created_by, $2), updated_by = $2, updated_at = now()
+        // the stored card goes too: fields the web UI does not show (photo, addresses, birthday) stay
+        // private, and the card gets a new UID; the shared entry is rebuilt from the visible fields
+        "UPDATE contacts SET user_id = NULL, dav_name = NULL, vcard = NULL, created_by = COALESCE(created_by, $2), updated_by = $2, updated_at = now()
          WHERE id = $1 AND user_id = $2 RETURNING name",
     )
     .bind(id)
@@ -454,13 +528,14 @@ pub async fn contact_copy(State(app): State<AppState>, u: CurrentUser, Path(id):
         return Err(AppError::BadRequest(format!("At most {} contacts.", crate::carddav::MAX_CONTACTS)));
     }
     let new: Option<i32> = sqlx::query_scalar(
-        "INSERT INTO contacts (user_id, name, organization, phone, phone_e164, mobile, mobile_e164, email, note, vcard, created_by, updated_by)
-         SELECT $2, name, organization, phone, phone_e164, mobile, mobile_e164, email, note, vcard, $2, $2
+        // the visible fields only: a copy of the stored card would carry the same vCard UID
+        "INSERT INTO contacts (user_id, name, organization, phone, phone_e164, mobile, mobile_e164, email, note, created_by, updated_by)
+         SELECT $2, name, organization, phone, phone_e164, mobile, mobile_e164, email, note, $2, $2
          FROM contacts WHERE id = $1 AND user_id IS NULL AND deleted_at IS NULL AND $3 RETURNING id",
     )
     .bind(id)
     .bind(uid)
-    .bind(app.cfg.shared_contacts.on())
+    .bind(shared_access(&app, &u).0)
     .fetch_optional(&app.db)
     .await
     .map_err(anyhow::Error::from)?;
@@ -472,6 +547,13 @@ pub async fn contact_copy(State(app): State<AppState>, u: CurrentUser, Path(id):
 pub async fn contact_restore(State(app): State<AppState>, u: CurrentUser, Path(id): Path<i32>) -> Result<Response, AppError> {
     if !u.is_admin {
         return Err(AppError::Forbidden("Admins only.".into()));
+    }
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM contacts WHERE user_id IS NULL AND deleted_at IS NULL")
+        .fetch_one(&app.db)
+        .await
+        .map_err(anyhow::Error::from)?;
+    if count >= MAX_SHARED {
+        return Err(AppError::BadRequest(format!("At most {MAX_SHARED} contacts.")));
     }
     // a live entry may have taken its CardDAV name meanwhile: the restored one gets c<id>.vcf
     let name: Option<String> = sqlx::query_scalar(

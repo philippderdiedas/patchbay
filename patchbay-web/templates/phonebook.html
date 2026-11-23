@@ -40,7 +40,7 @@
     {% endfor %}
   </table></div>
   <p class="muted">{{ c.t.s("Only you can see your contacts.") }}</p>{% endif %}
-  <p><a href="/contacts/new">+ {{ c.t.s("New contact") }}</a></p>
+  <p class="row"><a href="/contacts/new">+ {{ c.t.s("New contact") }}</a> <a href="/contacts/duplicates">{{ c.t.s("Find duplicates") }}</a></p>
 </div>
 {% if shared_on %}
 <div class="card noprint" id="shared">

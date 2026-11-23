@@ -23,7 +23,7 @@
 {% if !is_new %}
 <div class="row">
   {% if editable %}<form class="inline" method="post" action="/contacts/{{ k.id }}/delete" data-confirm="{% if k.shared %}{{ c.t.s("Delete for everyone? An admin can restore it for 30 days.") }}{% else %}{{ c.t.s("Really delete?") }}{% endif %}"><button class="danger">{{ c.t.s("Delete") }}</button></form>{% endif %}
-  {% if may_share %}<form class="inline" method="post" action="/contacts/{{ k.id }}/share" data-confirm="{{ c.t.s("Move this contact to the shared phone book? Everyone with phone access will see and may change it.") }}"><button>{{ c.t.s("Move to shared phone book") }}</button></form>{% endif %}
+  {% if may_share %}<form class="inline" method="post" action="/contacts/{{ k.id }}/share" data-confirm="{{ c.t.s("Move this contact to the shared phone book? Everyone with phone access will see and may change it. Only the fields shown here are kept (no photo, address or birthday from a phone).") }}"><button>{{ c.t.s("Move to shared phone book") }}</button></form>{% endif %}
   {% if may_copy %}<form class="inline" method="post" action="/contacts/{{ k.id }}/copy"><button>{{ c.t.s("Copy to my contacts") }}</button></form>{% endif %}
 </div>
 <div class="card" id="notes">

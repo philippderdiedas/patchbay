@@ -169,7 +169,7 @@ pub async fn phonebook(State(app): State<AppState>, u: CurrentUser) -> Result<Re
         e.presence = presence(states.get(&e.extension.to_string()).map(String::as_str), e.dnd);
     }
     let (contacts, shared) = match u.session.user_id {
-        Some(uid) => (crate::contacts::contacts_of(&app, uid, u.may_phone).await?, crate::contacts::shared_contacts(&app, uid, u.may_phone).await?),
+        Some(uid) => (crate::contacts::contacts_of(&app, uid, u.may_phone).await?, crate::contacts::shared_contacts(&app, &u, uid).await?),
         None => (vec![], vec![]),
     };
     let bin = if u.is_admin && app.cfg.shared_contacts.on() { crate::contacts::shared_bin(&app).await? } else { vec![] };
@@ -184,9 +184,9 @@ pub async fn phonebook(State(app): State<AppState>, u: CurrentUser) -> Result<Re
         entries,
         has_phone: u.session.user_id.is_some(),
         contacts,
-        shared_on: app.cfg.shared_contacts.on(),
+        shared_on: crate::contacts::shared_access(&app, &u).0,
         shared,
-        shared_edit: app.cfg.shared_contacts.may_edit(u.is_admin),
+        shared_edit: crate::contacts::shared_access(&app, &u).1,
         bin,
         bin_days: crate::contacts::BIN_DAYS,
         tokens,

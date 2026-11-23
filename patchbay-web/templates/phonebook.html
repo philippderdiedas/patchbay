@@ -76,6 +76,15 @@
     </ol>
     <p class="muted">{{ c.t.s("“book” contains colleagues, services and the account's own contacts; it is read-only.") }}</p>
   </details>
+  <h3>{{ c.t.s("Address books") }}</h3>
+  <p class="muted">{{ c.t.s("Most apps find all address books from the server address above. For apps that need one address per book (one account each):") }}</p>
+  <div class="tablewrap"><table>
+    <tr><th>{{ c.t.s("Address book") }}</th><th>{{ c.t.s("Address") }}</th><th></th></tr>
+    <tr><td>{{ c.t.s("Colleagues") }}</td><td><code>{{ dav_url }}colleagues/</code></td><td class="muted">{{ c.t.s("read-only") }}</td></tr>
+    <tr><td>{{ c.t.s("My contacts") }}</td><td><code>{{ dav_url }}contacts/</code></td><td class="muted">{{ c.t.s("read-write") }}</td></tr>
+    <tr><td>{{ c.t.s("Services") }}</td><td><code>{{ dav_url }}services/</code></td><td class="muted">{{ c.t.s("read-only") }}</td></tr>
+    <tr><td>{{ c.t.s("All combined") }}</td><td><code>{{ dav_url }}book/</code></td><td class="muted">{{ c.t.s("read-only, e.g. FRITZ!Box") }}</td></tr>
+  </table></div>
 </div>
 {% endif %}
 {% endblock %}

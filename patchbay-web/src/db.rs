@@ -23,12 +23,19 @@ pub struct DeviceRow {
     pub sip_username: String,
     #[sqlx(default)]
     pub admin_locked: bool,
+    /// type "mobile": the mobile number (E.164) that rings in parallel
+    #[sqlx(default)]
+    pub mobile_e164: Option<String>,
     /// Live registration (filled from Asterisk, not stored)
     #[sqlx(skip)]
     pub reg: Option<crate::ami::Contact>,
 }
 
 impl DeviceRow {
+    /// A mobile phone that rings in parallel (no SIP account, no registration)
+    pub fn is_mobile(&self) -> bool {
+        self.r#type == "mobile"
+    }
     /// direct number as text ("" without one)
     pub fn num(&self) -> String {
         self.number.map(|n| n.to_string()).unwrap_or_default()
@@ -139,7 +146,7 @@ pub async fn user_extension(db: &PgPool, user_id: i32) -> Result<i16> {
 pub async fn devices_of(db: &PgPool, user_id: i32) -> Result<Vec<DeviceRow>> {
     Ok(sqlx::query_as(
         "SELECT id, number, label, type::text AS type, managed_by::text AS managed_by, transport::text AS transport, srtp,
-                enabled, ring, ring_delay_s, sip_username, admin_locked
+                enabled, ring, ring_delay_s, sip_username, admin_locked, mobile_e164
          FROM devices WHERE user_id = $1 AND deleted_at IS NULL ORDER BY number",
     )
     .bind(user_id)
@@ -150,7 +157,7 @@ pub async fn devices_of(db: &PgPool, user_id: i32) -> Result<Vec<DeviceRow>> {
 pub async fn device_of(db: &PgPool, user_id: i32, device_id: i32) -> Result<Option<DeviceRow>> {
     Ok(sqlx::query_as(
         "SELECT id, number, label, type::text AS type, managed_by::text AS managed_by, transport::text AS transport, srtp,
-                enabled, ring, ring_delay_s, sip_username, admin_locked
+                enabled, ring, ring_delay_s, sip_username, admin_locked, mobile_e164
          FROM devices WHERE user_id = $1 AND id = $2 AND deleted_at IS NULL",
     )
     .bind(user_id)
@@ -198,7 +205,7 @@ pub async fn create_device(
         "INSERT INTO devices (user_id, number, label, type, managed_by, sip_username, ha1, transport, srtp)
          VALUES ($1, $2, $3, $4::device_type, $5::managed_by, $6, $7, $8::sip_transport, $9)
          RETURNING id, number, label, type::text AS type, managed_by::text AS managed_by, transport::text AS transport, srtp,
-                   enabled, ring, ring_delay_s, sip_username, admin_locked",
+                   enabled, ring, ring_delay_s, sip_username, admin_locked, mobile_e164",
     )
     .bind(user_id)
     .bind(number)
@@ -213,6 +220,27 @@ pub async fn create_device(
     .await?;
     tx.commit().await?;
     Ok((row, pass))
+}
+
+/// Creates a mobile phone device (type "mobile"): no direct number, no usable SIP account (random
+/// placeholder credentials; it is not in active_devices and so never in the PJSIP views).
+pub async fn create_mobile_device(db: &PgPool, user_id: i32, label: &str, e164: &str, managed_by: &str) -> Result<DeviceRow> {
+    let user = hex::encode(rand::thread_rng().r#gen::<[u8; 6]>());
+    let placeholder = hex::encode(Md5::digest(random_string(32)));
+    Ok(sqlx::query_as(
+        "INSERT INTO devices (user_id, number, label, type, managed_by, sip_username, ha1, mobile_e164)
+         SELECT id, NULL, $2, 'mobile'::device_type, $3::managed_by, $4, $5, $6 FROM users WHERE id = $1 AND deleted_at IS NULL
+         RETURNING id, number, label, type::text AS type, managed_by::text AS managed_by, transport::text AS transport, srtp,
+                   enabled, ring, ring_delay_s, sip_username, admin_locked, mobile_e164",
+    )
+    .bind(user_id)
+    .bind(label)
+    .bind(managed_by)
+    .bind(&user)
+    .bind(placeholder)
+    .bind(e164)
+    .fetch_one(db)
+    .await?)
 }
 
 /// Creates a token; only its SHA-256 is stored.

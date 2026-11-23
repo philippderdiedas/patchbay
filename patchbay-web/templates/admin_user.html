@@ -29,15 +29,17 @@
     <tr><th>{{ c.t.s("No.") }}</th><th>{{ c.t.s("Label") }}</th><th>{{ c.t.s("Type") }}</th><th>{{ c.t.s("Managed") }}</th><th>{{ c.t.s("Transport") }}</th><th>{{ c.t.s("SIP user") }}</th><th>{{ c.t.s("Status") }}</th><th></th></tr>
     {% for d in devices %}
     <tr>
-      <td>{{ d.num() }}</td><td>{{ d.label }}</td><td>{{ d.type }}</td><td>{{ d.managed_by }}</td><td>{% if d.type == "linphone" %}{{ d.transport }} · SRTP{% else %}
+      <td>{{ d.num() }}</td><td>{{ d.label }}</td><td>{% if d.is_mobile() %}{{ c.t.s("Mobile phone") }}{% else %}{{ d.type }}{% endif %}</td><td>{{ d.managed_by }}</td><td>{% if d.is_mobile() %}<span class="muted">–</span>{% else if d.type == "linphone" %}{{ d.transport }} · SRTP{% else %}
         <form class="inline row" method="post" action="/admin/users/{{ user.id }}/devices/{{ d.id }}">
           <input type="hidden" name="action" value="transport">
           {% let tsel_t = d.transport.as_str() %}{% let tsel_s = d.srtp.as_str() %}{% include "transport_select.html" %}
           <button>{{ c.t.s("Set") }}</button></form>{% endif %}</td>
-      <td><code>{{ d.sip_username }}</code></td>
-      <td data-reg="{{ d.id }}">{% if !d.enabled %}<span class="off">{{ c.t.s("locked") }}</span>{% else %}{% let st = d.reg_state() %}<span class="reg reg-{{ st }}">{% if st == "online" %}{{ c.t.s("registered") }}{% else if st == "unreachable" %}{{ c.t.s("not reachable") }}{% else %}{{ c.t.s("not registered") }}{% endif %}</span>{% let det = d.reg_detail() %}{% if !det.is_empty() %}<br><small class="muted">{{ det }}</small>{% endif %}{% endif %}</td>
+      {% if d.is_mobile() %}<td><span class="muted">–</span></td>
+      <td>{% if !d.enabled %}<span class="off">{{ c.t.s("locked") }}</span>{% else %}{{ d.mobile_e164.clone().unwrap_or_default() }}{% endif %}</td>
+      {% else %}<td><code>{{ d.sip_username }}</code></td>
+      <td data-reg="{{ d.id }}">{% if !d.enabled %}<span class="off">{{ c.t.s("locked") }}</span>{% else %}{% let st = d.reg_state() %}<span class="reg reg-{{ st }}">{% if st == "online" %}{{ c.t.s("registered") }}{% else if st == "unreachable" %}{{ c.t.s("not reachable") }}{% else %}{{ c.t.s("not registered") }}{% endif %}</span>{% let det = d.reg_detail() %}{% if !det.is_empty() %}<br><small class="muted">{{ det }}</small>{% endif %}{% endif %}</td>{% endif %}
       <td class="row">
-        {% if d.enabled %}<button type="button" data-ringtest="{{ d.id }}">{{ c.t.s("Ring test") }}</button>{% endif %}
+        {% if d.enabled && !d.is_mobile() %}<button type="button" data-ringtest="{{ d.id }}">{{ c.t.s("Ring test") }}</button>{% endif %}
         <form class="inline" method="post" action="/admin/users/{{ user.id }}/devices/{{ d.id }}">
           {% if d.enabled %}<input type="hidden" name="action" value="disable"><button>{{ c.t.s("Lock") }}</button>
           {% else %}<input type="hidden" name="action" value="enable"><button>{{ c.t.s("Unlock") }}</button>{% endif %}
@@ -57,14 +59,18 @@
       <option value="generic">{{ c.t.s("SIP device (manual setup)") }}</option>
       <option value="linphone">Linphone</option>
       <option value="fixed">{{ c.t.s("SIP device with a fixed address (no registration)") }}</option>
+      <option value="mobile">{{ c.t.s("Mobile phone (rings in parallel)") }}</option>
     </select>
     <input name="contact" data-show-when="type=fixed" placeholder="sip:42@10.0.0.5:5070" maxlength="120" aria-label="{{ c.t.s("Fixed address") }}">
+    <input name="mobile" data-show-when="type=mobile" placeholder="+49 176 …" maxlength="30" inputmode="tel" aria-label="{{ c.t.s("Mobile number") }}">
     {% let tsel_t = "tls" %}{% let tsel_s = "optional" %}{% include "transport_select.html" %}
     <button class="primary">{{ c.t.s("Create") }}</button>
   </form>
   <p class="muted">{{ c.t.s("SIP device: credentials are shown once and entered on the device (e.g. a DECT base). Linphone: QR code.") }}
   {{ c.t.s("Fixed address: for devices that only wait for calls, e.g. Home Assistant (VoIP integration); the PBX calls the address directly.") }}
   {{ c.t.s("UDP and TCP are only accepted from the allowed internal networks; TLS from all internal networks including VPN.") }}</p>
+  <p class="muted">{{ c.t.s("Mobile phone: rings at the same time as the other devices (or after the ring delay), dialled out over the trunks within the person's dialling permissions.") }}
+  <strong>{{ c.t.s("Make sure the mobile's own voicemail does not pick up before the PBX ring time ends (or switch it off): a call it answers counts as answered and does not reach the PBX voicemail.") }}</strong></p>
 </div>
 <div class="card">
   <h3>{{ c.t.s("App password for contacts (CardDAV)") }}</h3>

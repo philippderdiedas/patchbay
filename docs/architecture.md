@@ -115,7 +115,9 @@ external caller can never transfer a call out by key presses.
 
 `sub-user`: a caller on the person's personal blocklist hears busy; an immediate forward goes to
 its target (at most 3 hops), DND to the no-answer target. Otherwise `Dial()` rings all devices with
-ringing on, in `ring_order`, optionally delayed per device, with option `c` ("answered elsewhere"
+ringing on, in `ring_order`, optionally delayed per device (mobile phones as `Local/<delay>-<id>@ring-mobile`,
+dialled out by `sub-outbound` with the person's permissions and `PBX_PARALLEL`, which makes a refused leg
+end silently instead of answering with an announcement), with option `c` ("answered elsewhere"
 instead of "missed"), showing the caller name from the person's own contacts. No answer → no-answer
 target (mailbox, group, person, external number) or "not available".
 

@@ -370,6 +370,21 @@ Every call to a device carries the call context as SIP headers: `X-PBX-Caller` (
 `X-PBX-Caller-Name` (as shown on phones, incl. phone book names and group prefixes) and `X-PBX-DID`
 (the own number the call came in on, E.164; missing for internal calls). Phones ignore them.
 
+### Mobile phone as a device
+
+A person's mobile phone can be added as a device of type "Mobile phone": it rings in parallel with
+their SIP devices (with its own on/off switch and ring delay on the start page) for calls to the
+person. It has no SIP account and no direct number; the PBX calls the mobile number over the trunks
+(`ring-mobile` → `sub-outbound`) within the person's own dialling permissions, checked when the
+device is added and again on every call. Call groups and click-to-call do not ring it; an immediate
+forward still takes precedence. The number shown on the mobile follows the dial rule and trunk, as
+for forwards.
+
+`PBX_MOBILE_DEVICES=admin` (default): only admins add mobile phones (Admin → person → device);
+`users`: people add their own on the start page. Each call that rings a mobile uses a trunk channel.
+If the mobile's own voicemail picks up first, the call counts as answered and does not reach the
+PBX voicemail; the forms warn about this.
+
 The TLS transport (5061) negotiates TLS 1.3 or 1.2 (`method = sslv23`; OpenSSL refuses older
 versions). Devices get mandatory SRTP only over TLS; over UDP/TCP the web UI stores "SRTP if
 possible" instead (SDES keys would travel in clear text).

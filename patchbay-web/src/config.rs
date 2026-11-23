@@ -42,6 +42,9 @@ pub struct Config {
     pub apps_per_user: i64,
     /// PBX_DEVICES_PER_USER: devices a user may create themselves (admins: no limit)
     pub devices_per_user: i64,
+    /// PBX_MOBILE_DEVICES=admin|users: who may add a mobile phone as a device (rings in parallel,
+    /// dialled out over the trunks); default admin only
+    pub mobile_devices_self: bool,
     /// PBX_TTS: runtime text to speech (Wyoming server), None = off
     pub tts: Option<crate::tts::TtsConfig>,
     /// PBX_SCRIPT_HTTP_ALLOW: hosts/networks script apps may fetch from (empty: public internet)
@@ -351,6 +354,7 @@ impl Config {
             custom_dialplan_guard: var_or("PBX_CUSTOM_DIALPLAN_GUARD", "strict") != "off",
             apps_per_user: var_or("PBX_APPS_PER_USER", "10").parse().unwrap_or(10),
             devices_per_user: var_or("PBX_DEVICES_PER_USER", "10").parse().unwrap_or(10),
+            mobile_devices_self: var_or("PBX_MOBILE_DEVICES", "admin") == "users",
             tts: crate::tts::TtsConfig::from_env()?,
             script_http_allow: crate::script::parse_allow(&var_or("PBX_SCRIPT_HTTP_ALLOW", ""))?,
             user_apps: !user_kinds.is_empty(),

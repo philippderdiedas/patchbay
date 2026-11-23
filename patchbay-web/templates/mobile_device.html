@@ -1,0 +1,9 @@
+<h3>{{ c.t.s("Add mobile phone") }}</h3>
+  <form method="post" action="/devices" class="row">
+    <input type="hidden" name="type" value="mobile">
+    <input name="label" placeholder="{{ c.t.s("e.g. mobile") }}" maxlength="40" required aria-label="{{ c.t.s("Label") }}">
+    <input name="mobile" placeholder="+49 176 …" maxlength="30" inputmode="tel" required aria-label="{{ c.t.s("Mobile number") }}">
+    <button class="primary">{{ c.t.s("Create") }}</button>
+  </form>
+  <p class="muted">{{ c.t.s("Your mobile rings at the same time as your other devices (or after the ring delay set for it). Only numbers within your dialling permissions.") }}
+  <strong>{{ c.t.s("Make sure the mobile's own voicemail does not pick up before the PBX ring time ends (or switch it off): a call it answers counts as answered and does not reach the PBX voicemail.") }}</strong></p>

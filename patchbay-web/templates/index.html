@@ -54,8 +54,9 @@
     <tr>
       <td data-label="{{ c.t.s("No.") }}">{% if let Some(n) = d.number %}{% let num = n.to_string() %}{% include "dial.html" %}{% else %}<span class="muted">–</span>{% endif %}</td>
       <td data-label="{{ c.t.s("Label") }}">{{ d.label }}{% if d.managed_by == "admin" %} <span class="muted">{{ c.t.s("(managed by admin)") }}</span>{% endif %}</td>
-      <td data-label="{{ c.t.s("Type") }}">{{ d.type }} <span class="muted">{{ d.transport }}</span></td>
-      <td data-label="{{ c.t.s("Status") }}" data-reg="{{ d.id }}">{% if !d.enabled %}<span class="off">{{ c.t.s("locked") }}</span>{% else %}{% let st = d.reg_state() %}<span class="reg reg-{{ st }}">{% if st == "online" %}{{ c.t.s("registered") }}{% else if st == "unreachable" %}{{ c.t.s("not reachable") }}{% else %}{{ c.t.s("not registered") }}{% endif %}</span>{% let det = d.reg_detail() %}{% if !det.is_empty() %}<br><small class="muted">{{ det }}</small>{% endif %}{% endif %}</td>
+      <td data-label="{{ c.t.s("Type") }}">{% if d.is_mobile() %}{{ c.t.s("Mobile phone") }}{% else %}{{ d.type }} <span class="muted">{{ d.transport }}</span>{% endif %}</td>
+      {% if d.is_mobile() %}<td data-label="{{ c.t.s("Status") }}">{% if !d.enabled %}<span class="off">{{ c.t.s("locked") }}</span>{% else %}{{ d.mobile_e164.clone().unwrap_or_default() }}{% endif %}</td>
+      {% else %}<td data-label="{{ c.t.s("Status") }}" data-reg="{{ d.id }}">{% if !d.enabled %}<span class="off">{{ c.t.s("locked") }}</span>{% else %}{% let st = d.reg_state() %}<span class="reg reg-{{ st }}">{% if st == "online" %}{{ c.t.s("registered") }}{% else if st == "unreachable" %}{{ c.t.s("not reachable") }}{% else %}{{ c.t.s("not registered") }}{% endif %}</span>{% let det = d.reg_detail() %}{% if !det.is_empty() %}<br><small class="muted">{{ det }}</small>{% endif %}{% endif %}</td>{% endif %}
       <td data-label="{{ c.t.s("Ringing") }}"><form class="inline" method="post" action="/devices/{{ d.id }}">
         {% if d.ring %}<input type="hidden" name="action" value="ring_off"><button><span class="icon i-bell"></span> {{ c.t.s("on") }}</button>
         {% else %}<input type="hidden" name="action" value="ring_on"><button><span class="icon i-bell-off"></span> {{ c.t.s("off") }}</button>{% endif %}
@@ -66,7 +67,7 @@
           {% for (s, sel) in d.delay_options() %}<option value="{{ s }}" {% if sel %}selected{% endif %}>{% if s == 0 %}{{ c.t.s("immediately") }}{% else %}+{{ s }} s{% endif %}</option>{% endfor %}
         </select></form>{% endif %}</td>
       <td class="row">
-        {% if d.enabled %}<button type="button" data-ringtest="{{ d.id }}">{{ c.t.s("Ring test") }}</button>{% endif %}
+        {% if d.enabled && !d.is_mobile() %}<button type="button" data-ringtest="{{ d.id }}">{{ c.t.s("Ring test") }}</button>{% endif %}
         {% if d.managed_by == "self" %}
           {% if d.type == "linphone" && d.enabled %}<form class="inline" method="post" action="/devices/{{ d.id }}/qr"><button>{{ c.t.s("QR code") }}</button></form>{% endif %}
           <form class="inline" method="post" action="/devices/{{ d.id }}">
@@ -95,6 +96,7 @@
   </form>
   <p class="muted">{{ c.t.s("Install Linphone, choose “Scan QR code” or “Fetch remote configuration” in the assistant. Only inside the internal network or via VPN.") }}</p>
   {% if may_sip %}<p class="muted">{{ c.t.s("SIP device: credentials are shown once and entered on the device (e.g. a DECT base). Linphone: QR code.") }}</p>{% endif %}
+  {% if may_mobile %}{% include "mobile_device.html" %}{% endif %}
   </div>{% endif %}
 </div>
 {% if extension.is_some() %}

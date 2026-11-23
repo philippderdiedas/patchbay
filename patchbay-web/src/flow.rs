@@ -236,6 +236,8 @@ pub struct Config {
     targets: HashMap<i32, TargetRow>,
     users: HashMap<i32, UserRow>,
     devices: Vec<DeviceRow>,
+    /// mobile phones that ring in parallel (mobile_legs; sip_username holds the number)
+    mobiles: Vec<DeviceRow>,
     groups: HashMap<i32, GroupRow>,
     /// ordered like GROUP_MEMBERS (priority, extension)
     members: Vec<MemberRow>,
@@ -289,6 +291,11 @@ impl Config {
             c.users.insert(r.id, r);
         }
         c.devices = all(db, "SELECT user_id, label, sip_username, ring, ring_delay_s FROM active_devices ORDER BY ring_order, id").await?;
+        c.mobiles = all(
+            db,
+            "SELECT d.user_id, d.label, m.mobile_e164 AS sip_username, d.ring, d.ring_delay_s FROM mobile_legs m JOIN devices d ON d.id = m.id ORDER BY m.ring_order, m.id",
+        )
+        .await?;
         for r in all::<GroupRow>(
             db,
             "SELECT id, number, name, strategy, member_timeout_s, total_timeout_s, moh, no_answer_target, caller_name_prefix,
@@ -493,7 +500,8 @@ impl<'a> Walk<'a> {
             return n;
         }
         let devs = self.ring_devices(uid);
-        if devs.is_empty() {
+        let mobiles: Vec<&DeviceRow> = self.c.mobiles.iter().filter(|d| d.user_id == uid).collect();
+        if devs.is_empty() && mobiles.is_empty() {
             n = n.line(self.s("No phone set up to ring."));
         } else {
             n = n.line(tf(self.t, "Rings for {} s on:", &[&u.ring_timeout_s]));
@@ -504,10 +512,15 @@ impl<'a> Walk<'a> {
                     format!("• {}", d.label)
                 });
             }
+            // ring-mobile: dialled out over the trunks with the person's permissions
+            for d in &mobiles {
+                let delay = if d.ring_delay_s > 0 { format!(" {}", tf(self.t, "(only after {} s)", &[&d.ring_delay_s])) } else { String::new() };
+                n = n.line(format!("• {} ({}, {}){delay}", d.label, d.sip_username, self.s("mobile phone over the trunks")));
+            }
         }
         if u.dnd {
             n.live.push((true, self.s("Do not disturb is on: does not ring, goes straight on.").into()));
-        } else if !devs.is_empty() && self.connected(&devs) == Some(false) {
+        } else if mobiles.is_empty() && !devs.is_empty() && self.connected(&devs) == Some(false) {
             n.live.push((true, self.s("No phone connected right now: goes straight on.").into()));
         }
         let next = self.no_answer(u.no_answer_target);

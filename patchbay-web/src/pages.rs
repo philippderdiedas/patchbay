@@ -37,6 +37,8 @@ struct IndexPage {
     may_phone: bool,
     user_apps: bool,
     may_sip: bool,
+    /// may add a mobile phone as a device (PBX_MOBILE_DEVICES=users, or admin)
+    may_mobile: bool,
     in_phonebook: bool,
     phonebook_optional: bool,
     apps: Vec<crate::apps::AppRow>,
@@ -248,6 +250,7 @@ pub async fn index(
         may_phone: u.may_phone,
         user_apps: app.cfg.user_apps,
         may_sip,
+        may_mobile: u.is_admin || app.cfg.mobile_devices_self,
         in_phonebook,
         phonebook_optional: !app.cfg.phonebook_enforced,
         apps: match u.session.user_id { Some(uid) => crate::apps::apps_of(&app.db, uid).await?, None => vec![] },
@@ -338,6 +341,9 @@ pub struct NewDevice {
     label: String,
     #[serde(default)]
     r#type: String,
+    /// type "mobile": the mobile number
+    #[serde(default)]
+    mobile: String,
     #[serde(default)]
     transport: String,
     #[serde(default)]
@@ -406,6 +412,15 @@ pub async fn device_create(
         .map_err(anyhow::Error::from)?;
     if count >= app.cfg.devices_per_user && !u.is_admin {
         return Err(AppError::BadRequest(format!("At most {} devices per user – delete an old one first.", app.cfg.devices_per_user)));
+    }
+    if f.r#type == "mobile" {
+        if !(u.is_admin || app.cfg.mobile_devices_self) {
+            return Err(AppError::Forbidden("Only an admin can add a mobile phone here.".into()));
+        }
+        let e164 = crate::selfservice::mobile_number(&app, uid, &f.mobile).await?;
+        let device = db::create_mobile_device(&app.db, uid, &label, &e164, "self").await?;
+        db::audit(&app.db, &u.session.sub, "device.add", &format!("device-id:{}", device.id), serde_json::json!({"type": "mobile"})).await?;
+        return Ok(Redirect::to("/").into_response());
     }
     if f.r#type == "generic" {
         // Plain SIP device: only with permission; credentials are shown once
@@ -597,6 +612,9 @@ pub struct AdminNewDevice {
     /// type "fixed": SIP address the PBX calls (no registration), e.g. sip:42@10.0.0.5:5070
     #[serde(default)]
     contact: String,
+    /// type "mobile": the mobile number
+    #[serde(default)]
+    mobile: String,
 }
 
 /// Admin creates a device: Linphone gets a QR code, everything else gets credentials (shown once).
@@ -607,6 +625,13 @@ pub async fn admin_device_create(
     Form(f): Form<AdminNewDevice>,
 ) -> Result<Response, AppError> {
     let label = clean_label(&f.label)?;
+    let back = format!("/admin/users/{id}");
+    if f.r#type == "mobile" {
+        let e164 = crate::selfservice::mobile_number(&app, id, &f.mobile).await?;
+        let device = db::create_mobile_device(&app.db, id, &label, &e164, "admin").await?;
+        db::audit(&app.db, &u.session.sub, "device.add", &format!("device-id:{}", device.id), serde_json::json!({"type": "mobile", "managed_by": "admin"})).await?;
+        return Ok(Redirect::to(&back).into_response());
+    }
     // Linphone is provisioned by the PBX; anything else is a plain SIP device set up by hand
     // fixed address: checked before the device exists (same rule as the database CHECK)
     let contact = if f.r#type == "fixed" { Some(fixed_contact(&f.contact)?) } else { None };
@@ -619,7 +644,6 @@ pub async fn admin_device_create(
     };
     let (device, pass) = db::create_device(&app.db, &app.cfg.numbers, &app.cfg.sip_realm, id, &label, dtype, "admin", transport, srtp).await?;
     db::audit(&app.db, &u.session.sub, "device.add", &format!("device:{}", device.num()), serde_json::json!({"type": dtype, "managed_by": "admin"})).await?;
-    let back = format!("/admin/users/{id}");
     if let Some(c) = contact {
         // no credentials to show: the device never registers, the PBX calls it
         sqlx::query("UPDATE devices SET contact_uri = $2 WHERE id = $1").bind(device.id).bind(&c).execute(&app.db).await.map_err(anyhow::Error::from)?;
@@ -646,6 +670,9 @@ pub async fn admin_device_action(
 ) -> Result<Response, AppError> {
     let d = db::device_of(&app.db, uid, did).await?.ok_or(AppError::NotFound)?;
     if f.action == "transport" {
+        if d.is_mobile() {
+            return Err(AppError::BadRequest("A mobile phone has no SIP transport.".into()));
+        }
         let (tr, s) = db::transport_srtp(f.transport.as_deref().unwrap_or(""), f.srtp.as_deref().unwrap_or(""));
         let (tr, s) = if d.r#type == "linphone" { ("tls", "required") } else { (tr, s) };
         sqlx::query("UPDATE devices SET transport = $2::sip_transport, srtp = $3 WHERE id = $1")

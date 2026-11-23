@@ -80,6 +80,22 @@ async fn resolve_target(app: &AppState, uid: i32, raw: &str) -> Result<Resolved,
     Ok(Resolved { kind: "external", user_id: None, group_id: None, ivr_id: None, external: Some(e164) })
 }
 
+/// Number of a mobile phone device: a valid external number within the person's own dialling
+/// permissions (checked again by the dialplan on every call, ring-mobile -> sub-outbound).
+pub async fn mobile_number(app: &AppState, uid: i32, raw: &str) -> Result<String, AppError> {
+    let e164 = to_e164(raw.trim()).ok_or_else(|| AppError::BadRequest("Mobile phone: not a valid phone number (e.g. +49 176 …).".into()))?;
+    let allowed: bool = sqlx::query_scalar("SELECT may_dial($1, $2)")
+        .bind(uid)
+        .bind(normalise(&e164))
+        .fetch_one(&app.db)
+        .await
+        .map_err(anyhow::Error::from)?;
+    if !allowed {
+        return Err(AppError::BadRequest("Mobile phone: this number is outside the person's dialling permissions.".into()));
+    }
+    Ok(e164)
+}
+
 /// Inserts a self-service target owned by `uid`.
 async fn insert_target(tx: &mut sqlx::PgConnection, uid: i32, t: &Resolved) -> Result<i32, sqlx::Error> {
     sqlx::query_scalar(

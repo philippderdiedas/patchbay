@@ -110,11 +110,15 @@
     {% for r in rules %}
     <tr><td>{{ r.priority }}</td><td><code>{{ r.match_prefix }}</code></td><td>{{ r.min_len }}–{{ r.max_str() }}</td><td>{{ c.t.s(r.action.as_str()) }}</td>
       <td>{% if r.action == "internal" %}{% for k in r.kinds %}{{ c.t.s(k.as_str()) }} {% endfor %}{% else %}{{ c.tdesc(r.target_desc.clone().unwrap_or_default().as_str()) }}{% endif %}</td>
-      <td><form class="inline" method="post" action="/admin/trunks/{{ t.id }}/rules/{{ r.id }}/delete"><button class="danger">{{ c.t.s("Remove") }}</button></form></td></tr>
+      <td class="actions"><button type="button" data-fill="trunk-rule-form" data-v-id="{{ r.id }}" data-v-priority="{{ r.priority }}" data-v-match_prefix="{{ r.match_prefix }}"
+          data-v-min_len="{{ r.min_len }}" data-v-max_len="{{ r.max_value() }}" data-v-action="{{ r.action }}" data-v-kinds="{{ r.kinds_list() }}"
+          data-v-kind="{{ r.target_kind_str() }}" data-v-value="{{ r.target_value_str() }}">{{ c.t.s("Edit") }}</button>
+        <form class="inline" method="post" action="/admin/trunks/{{ t.id }}/rules/{{ r.id }}/delete"><button class="danger">{{ c.t.s("Remove") }}</button></form></td></tr>
     {% endfor %}
   </table></div>
-  <form method="post" action="/admin/trunks/{{ t.id }}/rules" style="margin-top:12px">
-    <h4>{{ c.t.s("Add rule") }}</h4>
+  <h4 data-edit-heading="trunk-rule-form" data-edit-text="{{ c.t.s("Edit rule") }}">{{ c.t.s("Add rule") }}</h4>
+  <form id="trunk-rule-form" method="post" action="/admin/trunks/{{ t.id }}/rules">
+    <input type="hidden" name="id" value="" data-edit-key autocomplete="off">
     <div class="row">
       <label>{{ c.t.s("Priority") }} <input name="priority" type="number" value="50" class="short"></label>
       <label>{{ c.t.s("Prefix") }} <input name="match_prefix" pattern="[0-9]*" class="short" placeholder="{{ c.t.s("any") }}"></label>
@@ -126,7 +130,9 @@
     </div>
     <div class="row" style="margin-top:8px" data-show-when="action=internal">{{ c.t.s("Reachable") }}: {% for k in kinds %}<label><input type="checkbox" name="kinds" value="{{ k }}" {% if loop.index0 < 2 %}checked{% endif %}> {{ c.t.s(k) }}</label>{% endfor %}</div>
     <div class="row" style="margin-top:8px" data-show-when="action=target">{% let ts = newrule.clone() %}{% include "target_select.html" %}</div>
-    <p><button class="primary">{{ c.t.s("Add") }}</button></p>
+    <p class="row"><button class="primary" data-adding>{{ c.t.s("Add") }}</button>
+      <button class="primary" data-editing hidden>{{ c.t.s("Save changes") }}</button>
+      <button type="reset" data-editing hidden>{{ c.t.s("Cancel") }}</button></p>
   </form>
   <p class="muted">{{ c.t.s("“outbound” passes the number to the dial rules with this trunk's permissions (transit to other sites).") }}</p>
 </div>

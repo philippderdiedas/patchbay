@@ -368,11 +368,26 @@ pub struct RuleRow {
     action: String,
     kinds: Vec<String>,
     target_desc: Option<String>,
+    target_kind: Option<String>,
+    target_value: Option<String>,
 }
 
 impl RuleRow {
     fn max_str(&self) -> String {
         self.max_len.map(|m| m.to_string()).unwrap_or_else(|| "∞".into())
+    }
+    /// for the Edit button
+    fn max_value(&self) -> String {
+        self.max_len.map(|m| m.to_string()).unwrap_or_default()
+    }
+    fn kinds_list(&self) -> String {
+        self.kinds.join(",")
+    }
+    fn target_kind_str(&self) -> &str {
+        self.target_kind.as_deref().unwrap_or("none")
+    }
+    fn target_value_str(&self) -> &str {
+        self.target_value.as_deref().unwrap_or_default()
     }
 }
 
@@ -403,9 +418,11 @@ async fn load(db: &PgPool, id: i32) -> Result<TrunkRow, AppError> {
 
 async fn page(app: &AppState, a: &crate::auth::CurrentUser, t: TrunkRow, is_new: bool) -> Result<Response, AppError> {
     let rules = sqlx::query_as(&format!(
-        "SELECT r.id, r.priority, r.match_prefix, r.min_len, r.max_len, r.action, r.kinds, {TARGET_DESC} AS target_desc
+        "SELECT r.id, r.priority, r.match_prefix, r.min_len, r.max_len, r.action, r.kinds, {TARGET_DESC} AS target_desc,
+                t.kind::text AS target_kind, {} AS target_value
          FROM trunk_inbound_rules r LEFT JOIN targets t ON t.id = r.target_id {TARGET_JOINS}
-         WHERE r.trunk_id = $1 ORDER BY r.priority, length(r.match_prefix) DESC"
+         WHERE r.trunk_id = $1 ORDER BY r.priority, length(r.match_prefix) DESC",
+        crate::ui::target_value!()
     ))
     .bind(t.id)
     .fetch_all(&app.db)
@@ -853,8 +870,12 @@ pub struct RuleForm {
     kind: String,
     #[serde(default)]
     value: String,
+    /// set when editing a rule (Edit button)
+    #[serde(default)]
+    id: String,
 }
 
+/// Adds an inbound rule, or changes one (`id`, Edit button).
 pub async fn rule_add(State(app): State<AppState>, Admin(a): Admin, Path(id): Path<i32>, MultiForm(f): MultiForm<RuleForm>) -> Result<Response, AppError> {
     let t = load(&app.db, id).await?;
     if !["internal", "target", "outbound", "reject"].contains(&f.action.as_str()) {
@@ -865,12 +886,27 @@ pub async fn rule_add(State(app): State<AppState>, Admin(a): Admin, Path(id): Pa
     }
     let kinds: Vec<String> = f.kinds.iter().filter(|k| KINDS.contains(&k.as_str())).cloned().collect();
     let max_len = f.max_len.trim().parse::<i16>().ok();
+    let rid: Option<i32> = match f.id.trim() {
+        "" => None,
+        r => Some(r.parse().map_err(|_| AppError::BadRequest("Invalid rule.".into()))?),
+    };
+    // the rule's current target (editing): reused for a target, dropped otherwise
+    let old_target: Option<i32> = match rid {
+        Some(rid) => sqlx::query_scalar::<_, Option<i32>>("SELECT target_id FROM trunk_inbound_rules WHERE trunk_id = $1 AND id = $2")
+            .bind(id)
+            .bind(rid)
+            .fetch_optional(&app.db)
+            .await
+            .map_err(anyhow::Error::from)?
+            .ok_or_else(|| AppError::BadRequest("The rule no longer exists. Please reload the page.".into()))?,
+        None => None,
+    };
     // the same rule twice would never be reached and only confuses (deleting one changes nothing)
     if f.action != "target" {
         let same: bool = sqlx::query_scalar(
             "SELECT EXISTS (SELECT 1 FROM trunk_inbound_rules WHERE trunk_id = $1 AND priority = $2
                AND COALESCE(match_prefix, '') = $3 AND min_len = $4 AND max_len IS NOT DISTINCT FROM $5
-               AND action::text = $6 AND kinds = $7)",
+               AND action::text = $6 AND kinds = $7 AND id IS DISTINCT FROM $8)",
         )
         .bind(id)
         .bind(f.priority)
@@ -879,6 +915,7 @@ pub async fn rule_add(State(app): State<AppState>, Admin(a): Admin, Path(id): Pa
         .bind(max_len)
         .bind(&f.action)
         .bind(&kinds)
+        .bind(rid)
         .fetch_one(&app.db)
         .await
         .map_err(anyhow::Error::from)?;
@@ -887,14 +924,17 @@ pub async fn rule_add(State(app): State<AppState>, Admin(a): Admin, Path(id): Pa
         }
     }
     let target = if f.action == "target" {
-        Some(save_target(&app.db, None, &TargetInput { kind: f.kind.clone(), value: f.value.clone() }).await?.ok_or_else(|| AppError::BadRequest("Select a target.".into()))?)
+        Some(save_target(&app.db, old_target, &TargetInput { kind: f.kind.clone(), value: f.value.clone() }).await?.ok_or_else(|| AppError::BadRequest("Select a target.".into()))?)
     } else {
         None
     };
-    sqlx::query(
+    let n = sqlx::query(if rid.is_some() {
+        "UPDATE trunk_inbound_rules SET priority = $2, match_prefix = $3, min_len = $4, max_len = $5, action = $6,
+                kinds = $7, target_id = $8 WHERE trunk_id = $1 AND id = $9"
+    } else {
         "INSERT INTO trunk_inbound_rules (trunk_id, priority, match_prefix, min_len, max_len, action, kinds, target_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
-    )
+         SELECT $1, $2, $3, $4, $5, $6, $7, $8 WHERE $9::int IS NULL"
+    })
     .bind(id)
     .bind(f.priority)
     .bind(&f.match_prefix)
@@ -903,10 +943,20 @@ pub async fn rule_add(State(app): State<AppState>, Admin(a): Admin, Path(id): Pa
     .bind(&f.action)
     .bind(&kinds)
     .bind(target)
+    .bind(rid)
     .execute(&app.db)
     .await
-    .map_err(anyhow::Error::from)?;
-    db::audit(&app.db, &a.session.sub, "trunk.rule_add", &format!("trunk:{}", t.asterisk_ref), serde_json::json!({"action": f.action, "prefix": f.match_prefix, "kinds": kinds})).await?;
+    .map_err(anyhow::Error::from)?
+    .rows_affected();
+    if n == 0 {
+        return Err(AppError::BadRequest("The rule no longer exists. Please reload the page.".into()));
+    }
+    // a target the rule no longer uses (action changed away from "target")
+    if let (Some(old), None) = (old_target, target) {
+        sqlx::query("DELETE FROM targets WHERE id = $1").bind(old).execute(&app.db).await.map_err(anyhow::Error::from)?;
+    }
+    let action = if rid.is_some() { "trunk.rule_edit" } else { "trunk.rule_add" };
+    db::audit(&app.db, &a.session.sub, action, &format!("trunk:{}", t.asterisk_ref), serde_json::json!({"rule": rid, "action": f.action, "prefix": f.match_prefix, "kinds": kinds})).await?;
     Ok(Redirect::to(&format!("/admin/trunks/{id}")).into_response())
 }
 

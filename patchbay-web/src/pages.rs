@@ -145,6 +145,8 @@ struct PhonebookPage {
     shared_edit: bool,
     bin: Vec<crate::contacts::Contact>,
     bin_days: i32,
+    /// external phone books (PBX_EXTERNAL_BOOKS), read-only
+    external: Vec<crate::extbooks::BookView>,
     tokens: Vec<crate::contacts::DavToken>,
     dav_url: String,
     extension: String,
@@ -189,6 +191,7 @@ pub async fn phonebook(State(app): State<AppState>, u: CurrentUser) -> Result<Re
         shared_edit: crate::contacts::shared_access(&app, &u).1,
         bin,
         bin_days: crate::contacts::BIN_DAYS,
+        external: if u.session.user_id.is_some() && (u.may_phone || u.is_admin) { crate::extbooks::books(&app).await? } else { vec![] },
         tokens,
         dav_url,
         extension,

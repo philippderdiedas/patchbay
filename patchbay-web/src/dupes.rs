@@ -97,6 +97,7 @@ fn distance(a: &str, b: &str, max: usize) -> usize {
 }
 
 /// Names that are probably the same person: same words, or (long enough) at most 2 typos apart.
+#[cfg(test)]
 pub fn similar_names(a: &str, b: &str) -> bool {
     similar_keys(&name_key(a), &name_key(b))
 }

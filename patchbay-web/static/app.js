@@ -518,6 +518,12 @@ document.addEventListener("DOMContentLoaded", () => {
         d.append(el("div", { class: "cmp-ctx-h", text: t("Last calls") }), ul);
       }
       if (x.voicemails > 0) d.append(el("a", { href: "/voicemail", text: `${x.voicemails} ${t("voicemails from this number")}` }));
+      if (x.external) {
+        const label = `${x.external.book}: ${x.external.name}`;
+        d.append(x.external.url
+          ? el("a", { href: x.external.url, target: "_blank", rel: "noopener", text: `${t("Open in")} ${label}` })
+          : el("span", { class: "muted", text: label }));
+      }
       if (x.contact) {
         d.append(el("a", { href: `/contacts/${x.contact.id}`, text: `${t("Open contact")}: ${x.contact.name}` }));
       } else {
@@ -542,7 +548,7 @@ document.addEventListener("DOMContentLoaded", () => {
       card.append(el("div", { class: "cmp-state" }, el("span", { text: state }), el("span", { class: "cmp-time", text: fmt(c.secs) })));
       // own contact (saved during the call) unless the shown name already has it (group prefix)
       const ctx = ctxCache.get(c.number);
-      const contact = ctx && ctx.contact ? ctx.contact.name : "";
+      const contact = ctx && ctx.contact ? ctx.contact.name : (ctx && ctx.external ? ctx.external.name : "");
       const name = contact && !(c.name || "").includes(contact) ? contact : c.name;
       card.append(el("div", { class: "cmp-who", text: name || c.number || "?" }));
       const sub = [name ? c.number : "", c.via ? `${t("via")} ${c.via}` : "", c.muted ? t("Muted") : ""].filter(Boolean).join(" · ");

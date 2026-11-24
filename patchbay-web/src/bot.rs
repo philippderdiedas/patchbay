@@ -385,9 +385,13 @@ impl Pbx for Bridge {
         .fetch_all(&self.app.db)
         .await?;
         let contacts: Vec<(String, Option<String>, Option<String>, Option<String>)> = sqlx::query_as(
-            "SELECT name, organization, phone, mobile FROM contacts
-             WHERE (user_id = $1 OR ($3 AND user_id IS NULL AND deleted_at IS NULL))
-               AND (strpos(lower(name), lower($2)) > 0 OR strpos(lower(COALESCE(organization, '')), lower($2)) > 0)
+            "SELECT name, organization, phone, mobile FROM (
+               SELECT name, organization, phone, mobile FROM contacts
+               WHERE (user_id = $1 OR ($3 AND user_id IS NULL AND deleted_at IS NULL))
+               UNION ALL
+               SELECT name, organization, phone, mobile FROM external_contacts
+             ) x
+             WHERE strpos(lower(name), lower($2)) > 0 OR strpos(lower(COALESCE(organization, '')), lower($2)) > 0
              ORDER BY lower(name) LIMIT 20",
         )
         .bind(uid)

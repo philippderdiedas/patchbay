@@ -20,6 +20,7 @@ mod custom;
 mod db;
 mod dupes;
 mod events;
+mod extbooks;
 mod pages;
 mod provision;
 mod script;
@@ -271,6 +272,8 @@ async fn main() -> Result<()> {
     voicemail::spawn_sweep(state.clone());
     // retention of call records and audit log, Asterisk log rotation
     housekeeping::spawn(state.clone());
+    // external phone books (PBX_EXTERNAL_BOOKS): periodic CardDAV loads
+    extbooks::spawn(state.clone()).await.context("external phone books")?;
     {
         // message waiting lamps of all mailboxes (Asterisk keeps them only in memory)
         let st = state.clone();

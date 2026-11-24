@@ -6,6 +6,7 @@
   <a href="#services">{{ c.t.s("Services") }}</a>
   {% if has_phone %}<a href="#contacts">{{ c.t.s("My contacts") }}</a>
   {% if shared_on %}<a href="#shared">{{ c.t.s("Shared phone book") }}</a>{% endif %}
+  {% for b in external %}<a href="#ext-{{ b.id }}">{{ b.name }}</a>{% endfor %}
   <a href="#carddav">{{ c.t.s("On other devices") }}</a>{% endif %}
 </nav>
 <div class="card" id="colleagues">
@@ -81,6 +82,23 @@
 </div>
 {% endif %}
 {% endif %}
+{% for b in external %}
+<div class="card noprint" id="ext-{{ b.id }}">
+  <h2>{{ b.name }}</h2>
+  {% if let Some(e) = b.error %}<p class="warn">{{ c.t.s("Last load failed, showing the previous copy:") }} {{ e }}</p>{% endif %}
+  {% if b.entries.is_empty() %}<p class="muted">{{ c.t.s("No entries yet.") }}</p>{% else %}
+  <div class="tablewrap"><table class="stacked">
+    <tr><th>{{ c.t.s("Name") }}</th><th>{{ c.t.s("Company") }}</th><th>{{ c.t.s("Phone") }}</th><th>{{ c.t.s("Mobile") }}</th></tr>
+    {% for k in b.entries %}
+    <tr><td data-label="{{ c.t.s("Name") }}">{% if let Some(u) = k.url %}<a href="{{ u }}" target="_blank" rel="noopener">{{ k.name }}</a>{% else %}{{ k.name }}{% endif %}</td>
+      <td data-label="{{ c.t.s("Company") }}">{{ k.org() }}</td>
+      <td data-label="{{ c.t.s("Phone") }}">{% if let Some(n) = k.phone %}{% let num = n.clone() %}{% include "dial.html" %}{% endif %}</td>
+      <td data-label="{{ c.t.s("Mobile") }}">{% if let Some(n) = k.mobile %}{% let num = n.clone() %}{% include "dial.html" %}{% endif %}</td></tr>
+    {% endfor %}
+  </table></div>{% endif %}
+  <p class="muted">{{ c.t.s("Read-only copy, changed in the other system.") }}{% if !b.synced.is_empty() %} {{ c.t.s("Loaded") }} {{ b.synced }}.{% endif %}</p>
+</div>
+{% endfor %}
 <div class="card noprint" id="carddav">
   <h2>{{ c.t.s("Contacts on other devices (CardDAV)") }}</h2>
   <p>{{ c.t.s("Sync the phone book and your contacts with the contacts app on your phone or computer (iPhone, Mac, DAVx⁵ on Android, Thunderbird). Contacts you add or change there show up here, and the other way round. Colleagues are read-only.") }}</p>
@@ -121,6 +139,7 @@
     <tr><th>{{ c.t.s("Address book") }}</th><th>{{ c.t.s("Address") }}</th><th></th></tr>
     <tr><td>{{ c.t.s("Colleagues") }}</td><td><code>{{ dav_url }}colleagues/</code></td><td class="muted">{{ c.t.s("read-only") }}</td></tr>
     <tr><td>{{ c.t.s("My contacts") }}</td><td><code>{{ dav_url }}contacts/</code></td><td class="muted">{{ c.t.s("read-write") }}</td></tr>
+    {% for b in external %}<tr><td>{{ b.name }}</td><td><code>{{ dav_url }}ext-{{ b.id }}/</code></td><td class="muted">{{ c.t.s("read-only") }}</td></tr>{% endfor %}
     {% if shared_on %}<tr><td>{{ c.t.s("Shared phone book") }}</td><td><code>{{ dav_url }}shared/</code></td><td class="muted">{% if shared_edit %}{{ c.t.s("read-write") }}{% else %}{{ c.t.s("read-only") }}{% endif %}</td></tr>{% endif %}
     <tr><td>{{ c.t.s("Services") }}</td><td><code>{{ dav_url }}services/</code></td><td class="muted">{{ c.t.s("read-only") }}</td></tr>
     <tr><td>{{ c.t.s("All combined") }}</td><td><code>{{ dav_url }}book/</code></td><td class="muted">{{ c.t.s("read-only, e.g. FRITZ!Box") }}</td></tr>

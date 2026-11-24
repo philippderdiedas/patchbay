@@ -756,6 +756,11 @@ fn de_pairs() -> Vec<(&'static str, &'static str)> {
         // phone book page: jump links
         ("Phone books", "Telefonbücher"),
         ("On other devices", "Auf anderen Geräten"),
+        // external phone books (extbooks.rs)
+        ("Open in", "Öffnen in"),
+        ("Last load failed, showing the previous copy:", "Letztes Laden fehlgeschlagen, angezeigt wird die vorige Kopie:"),
+        ("Read-only copy, changed in the other system.", "Nur-Lese-Kopie, Änderungen im anderen System."),
+        ("Loaded", "Geladen"),
         // duplicate finder (dupes.rs)
         ("Duplicates", "Doppelte Einträge"),
         ("Compares your contacts with each other and with the shared phone book.", "Vergleicht deine Kontakte untereinander und mit dem gemeinsamen Telefonbuch."),

@@ -225,7 +225,7 @@ fn esc(s: &str) -> String {
     s.replace('\\', "\\\\").replace(',', "\\,").replace(';', "\\;").replace('\n', "\\n")
 }
 
-fn unesc(s: &str) -> String {
+pub(crate) fn unesc(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut it = s.chars();
     while let Some(c) = it.next() {
@@ -264,7 +264,7 @@ fn components(v: &str) -> Vec<String> {
 }
 
 /// Unfolded content lines.
-fn unfold(card: &str) -> Vec<String> {
+pub(crate) fn unfold(card: &str) -> Vec<String> {
     let mut lines: Vec<String> = vec![];
     for raw in card.split('\n') {
         let raw = raw.strip_suffix('\r').unwrap_or(raw);
@@ -278,7 +278,7 @@ fn unfold(card: &str) -> Vec<String> {
 }
 
 /// (property name without group, upper-case; parameters, upper-case; raw value)
-fn split_line(line: &str) -> Option<(String, String, &str)> {
+pub(crate) fn split_line(line: &str) -> Option<(String, String, &str)> {
     // the value starts at the first ':' outside double quotes
     let mut quoted = false;
     let colon = line.char_indices().find(|&(_, c)| {
@@ -800,13 +800,18 @@ async fn handle_inner(app: &AppState, method: Method, uri: Uri, headers: &Header
     let path = if path == "/carddav" { BASE.to_string() } else { path };
     let t = user_tr(app, me.uid, headers).await;
     // which collection and resource
-    let (coll, res) = [BOOK, COLLEAGUES, CONTACTS, SERVICES, SHARED]
+    // external phone books (PBX_EXTERNAL_BOOKS): /carddav/ext-<id>/, read-only
+    let ext_paths: Vec<String> = app.cfg.external_books.iter().map(|b| format!("/carddav/ext-{}/", b.id)).collect();
+    let (coll, res): (Option<String>, Option<String>) = [BOOK, COLLEAGUES, CONTACTS, SERVICES, SHARED]
         .iter()
+        .map(|c| c.to_string())
+        .chain(ext_paths.iter().cloned())
         .find_map(|c| {
-            if path == *c || path == c.trim_end_matches('/') {
-                Some((*c, None))
+            if path == c || path == c.trim_end_matches('/') {
+                Some((c, None))
             } else {
-                path.strip_prefix(c).map(|r| (*c, Some(r.to_string())))
+                let r = path.strip_prefix(c.as_str()).map(str::to_string);
+                r.map(|r| (c, Some(r)))
             }
         })
         .map(|(c, r)| (Some(c), r))
@@ -823,11 +828,19 @@ async fn handle_inner(app: &AppState, method: Method, uri: Uri, headers: &Header
             if app.cfg.shared_contacts.on() && me.phone {
                 r += &collection(SHARED, t.s("Shared phone book"), Some(&ctag(&shared(app, &me).await?, &ep)), shared_write(app, &me));
             }
+            if me.phone {
+                for b in &app.cfg.external_books {
+                    let path = format!("/carddav/ext-{}/", b.id);
+                    r += &collection(&path, &b.name, Some(&ctag(&external(app, &b.id).await?, &ep)), false);
+                }
+            }
         }
         return Ok(multistatus(&r));
     }
     let Some(coll) = coll else { return status(StatusCode::NOT_FOUND) };
-    if coll == SHARED && !(app.cfg.shared_contacts.on() && me.phone) {
+    let coll = coll.as_str();
+    let ext_book = app.cfg.external_books.iter().find(|b| coll == format!("/carddav/ext-{}/", b.id));
+    if (coll == SHARED && !(app.cfg.shared_contacts.on() && me.phone)) || (ext_book.is_some() && !me.phone) {
         return status(StatusCode::NOT_FOUND);
     }
 
@@ -840,24 +853,31 @@ async fn handle_inner(app: &AppState, method: Method, uri: Uri, headers: &Header
         _ => {}
     }
 
-    let cards = match coll {
-        COLLEAGUES => colleagues(app).await?,
-        CONTACTS => personal(app, me.uid).await?,
-        SERVICES => services(app, t).await?,
-        SHARED => shared(app, &me).await?,
+    let cards = match (coll, ext_book) {
+        (_, Some(b)) => external(app, &b.id).await?,
+        (COLLEAGUES, _) => colleagues(app).await?,
+        (CONTACTS, _) => personal(app, me.uid).await?,
+        (SERVICES, _) => services(app, t).await?,
+        (SHARED, _) => shared(app, &me).await?,
         _ => {
             let mut c = colleagues(app).await?;
             c.extend(personal(app, me.uid).await?);
             c.extend(shared(app, &me).await?);
+            if me.phone {
+                for b in &app.cfg.external_books {
+                    c.extend(external(app, &b.id).await?);
+                }
+            }
             c.extend(services(app, t).await?);
             c
         }
     };
-    let (name, write) = match coll {
-        COLLEAGUES => (app.cfg.site_title.as_str(), false),
-        CONTACTS => (t.s("My contacts"), me.write),
-        SERVICES => (t.s("Services"), false),
-        SHARED => (t.s("Shared phone book"), shared_write(app, &me)),
+    let (name, write) = match (coll, ext_book) {
+        (_, Some(b)) => (b.name.as_str(), false),
+        (COLLEAGUES, _) => (app.cfg.site_title.as_str(), false),
+        (CONTACTS, _) => (t.s("My contacts"), me.write),
+        (SERVICES, _) => (t.s("Services"), false),
+        (SHARED, _) => (t.s("Shared phone book"), shared_write(app, &me)),
         _ => (app.cfg.site_title.as_str(), false),
     };
     match (method.as_str(), res.as_deref()) {
@@ -1027,6 +1047,11 @@ async fn delete_contact(app: &AppState, me: &Principal, owner: Owner, res: Optio
         }
     }
     status(StatusCode::NO_CONTENT)
+}
+
+/// Cards of an external phone book (stored copies, read-only)
+async fn external(app: &AppState, book: &str) -> anyhow::Result<Vec<Card>> {
+    Ok(crate::extbooks::cards(app, book).await?.into_iter().map(|(res, vcard)| Card { hay: vcard.to_lowercase(), res, vcard }).collect())
 }
 
 /// Fields and stored card of a contact (for edits in the web UI): the person's own (`Some(uid)`) or a

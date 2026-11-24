@@ -47,6 +47,8 @@ pub struct Config {
     pub mobile_devices_self: bool,
     /// PBX_SHARED_CONTACTS=off|read|write: shared phone book; read = only admins edit it
     pub shared_contacts: SharedContacts,
+    /// PBX_EXTERNAL_BOOKS: read-only CardDAV address books loaded periodically (extbooks.rs)
+    pub external_books: Vec<crate::extbooks::ExtBook>,
     /// PBX_TTS: runtime text to speech (Wyoming server), None = off
     pub tts: Option<crate::tts::TtsConfig>,
     /// PBX_SCRIPT_HTTP_ALLOW: hosts/networks script apps may fetch from (empty: public internet)
@@ -388,6 +390,7 @@ impl Config {
             apps_per_user: var_or("PBX_APPS_PER_USER", "10").parse().unwrap_or(10),
             devices_per_user: var_or("PBX_DEVICES_PER_USER", "10").parse().unwrap_or(10),
             mobile_devices_self: var_or("PBX_MOBILE_DEVICES", "admin") == "users",
+            external_books: crate::extbooks::from_env()?,
             shared_contacts: match var_or("PBX_SHARED_CONTACTS", "off").trim().to_lowercase().as_str() {
                 "off" | "" => SharedContacts::Off,
                 "read" => SharedContacts::Read,

@@ -38,3 +38,4 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 argon2 = { version = "0.5", features = ["std"] }
 rhai = { version = "1.19", features = ["serde", "sync"] }
 patchbay-notify = { path = "../patchbay-notify" }
+quick-xml = "0.38"

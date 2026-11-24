@@ -165,6 +165,15 @@ names (same words, or up to two typos), each switchable. Per pair: merge (choose
 entry that remains; the other is deleted, a shared one goes to the bin), delete one, or "not a
 duplicate" (remembered per person, undone on the same page). Merging needs edit rights on both entries.
 
+**External phone books** (`PBX_EXTERNAL_BOOKS`, see `deploy/pbx.env.example`): read-only CardDAV
+address books of other systems, e.g. an ERP or CRM; for Dolibarr there is
+[doli-carddav-bridge](https://git.fablab-luebeck.de/fablab-public/doli-carddav-bridge). patchbay-web
+loads each one every few minutes (ctag check, then only new or changed cards) into a local copy, so
+caller names keep working while the other system is down. They appear on the phone book page, as
+`/carddav/ext-<id>/` (also in `/carddav/book/`), in the call window's search, in "My calls" and for
+caller names after the person's own contacts and the shared phone book. A card's `URL` (http/https)
+becomes an "open in …" link. Changes are made in the other system.
+
 Force a resync on all clients (e.g. a Linphone that keeps an empty list): change the setting
 `carddav_epoch`, e.g. `INSERT INTO settings VALUES ('carddav_epoch', now()::text) ON CONFLICT (key) DO
 UPDATE SET value = EXCLUDED.value;`. All collection tags (ctag) change; clients compare the etags again and

@@ -749,6 +749,11 @@ pub async fn calls_of(db: &sqlx::PgPool, uid: i32, limit: i64) -> Result<Vec<Cal
                        OR k.phone_e164 = c.number OR k.mobile_e164 = c.number
                        OR k.phone_e164 = nat.e164 OR k.mobile_e164 = nat.e164)
                    ORDER BY k.user_id IS NULL, k.id LIMIT 1),
+                  -- then the external phone books
+                  (SELECT x.name FROM external_contacts x
+                   WHERE x.phone = c.number OR x.mobile = c.number OR x.phone_e164 = c.number OR x.mobile_e164 = c.number
+                      OR x.phone_e164 = nat.e164 OR x.mobile_e164 = nat.e164
+                   ORDER BY x.book, x.res LIMIT 1),
                   (SELECT x.display_name FROM users x WHERE x.extension::text = c.number AND x.deleted_at IS NULL)) AS name
          FROM calls c
          -- national number (0…) as E.164 with the site's country code (settings.country_code, PBX_COUNTRY_CODE)

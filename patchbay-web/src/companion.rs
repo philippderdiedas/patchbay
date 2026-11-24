@@ -316,7 +316,7 @@ const TEXTS: &[&str] = &[
     "Action failed.", "Phone system not reachable", "Pick up at your phone now.", "Muted", "Open", "Close",
     "Settings", "Decline: the call goes on as if you had not answered (e.g. to your mailbox); colleagues in a group keep ringing.",
     "Reject: the caller hears busy.", "Colleagues", "Call groups", "My contacts", "Nothing found", "Services",
-    "Open contact", "Block this number for me", "Blocked for you",
+    "Open contact", "Block this number for me", "Blocked for you", "Open in",
     "Block this number for you? Calls from it to you personally will hear busy; calls to your call groups still reach you.",
     "Notes", "Note", "Add note", "Edit", "Delete", "Save", "Visible to all colleagues", "Delete this note?",
 ];
@@ -662,9 +662,15 @@ async fn book_entries(app: &AppState, uid: i32, t: crate::i18n::Tr) -> Result<Ve
             .map_err(db)?;
     let contacts: Vec<(String, Option<String>, Option<String>, Option<String>)> =
         // own contacts and the shared phone book
+        // own contacts, the shared phone book and the external phone books
         sqlx::query_as(
-            "SELECT name, organization, phone, mobile FROM contacts
-             WHERE user_id = $1 OR ($2 AND user_id IS NULL AND deleted_at IS NULL) ORDER BY lower(name), id",
+            "SELECT name, organization, phone, mobile FROM (
+               SELECT name, organization, phone, mobile, 0 AS src, id::text AS k FROM contacts
+               WHERE user_id = $1 OR ($2 AND user_id IS NULL AND deleted_at IS NULL)
+               UNION ALL
+               SELECT name, organization, phone, mobile, 1, book || '/' || res FROM external_contacts
+               WHERE phone IS NOT NULL OR mobile IS NOT NULL
+             ) x ORDER BY lower(name), src, k",
         )
             .bind(uid)
             .bind(app.cfg.shared_contacts.on())
@@ -749,12 +755,21 @@ pub struct ContactRef {
     name: String,
 }
 
+#[derive(Serialize)]
+pub struct ExtRef {
+    name: String,
+    book: String,
+    url: Option<String>,
+}
+
 #[derive(Serialize, Default)]
 pub struct Context {
     calls: Vec<PastCall>,
     voicemails: i64,
     /// own contact with this number ("open contact" instead of "save as contact")
     contact: Option<ContactRef>,
+    /// entry of an external phone book with this number (name, book, link to the other system)
+    external: Option<ExtRef>,
     /// the number as E.164 (prefill of a new contact); None for internal / invalid numbers, which
     /// get no blocklist entry and no notes
     e164: Option<String>,
@@ -816,7 +831,22 @@ pub async fn context(State(app): State<AppState>, u: CurrentUser, Query(q): Quer
         Some(e) => (crate::blocklist::personal_blocked(&app, uid, e).await?, crate::notes::notes_for(&app, uid, e).await?),
         None => (false, vec![]),
     };
-    Ok(Json(Context { calls, voicemails, contact, e164, blocked, notes, shared_notes: app.cfg.shared_notes }))
+    // external phone books: same matching; the book's display name from the configuration
+    let ext: Option<(String, String, Option<String>)> = sqlx::query_as(
+        "SELECT book, name, url FROM external_contacts WHERE length($1) > 4
+           AND (phone = $1 OR mobile = $1 OR phone_e164 = caller_e164($1) OR mobile_e164 = caller_e164($1))
+         ORDER BY book, res LIMIT 1",
+    )
+    .bind(&number)
+    .fetch_optional(&app.db)
+    .await
+    .map_err(anyhow::Error::from)?;
+    let external = ext.map(|(book, name, url)| ExtRef {
+        book: app.cfg.external_books.iter().find(|b| b.id == book).map(|b| b.name.clone()).unwrap_or(book),
+        name,
+        url,
+    });
+    Ok(Json(Context { calls, voicemails, contact, external, e164, blocked, notes, shared_notes: app.cfg.shared_notes }))
 }
 
 

@@ -49,6 +49,8 @@ pub struct Config {
     pub shared_contacts: SharedContacts,
     /// PBX_EXTERNAL_BOOKS: read-only CardDAV address books loaded periodically (extbooks.rs)
     pub external_books: Vec<crate::extbooks::ExtBook>,
+    /// PBX_CALLER_NAME_FORMAT=name_org|name: caller names from contacts with the company ("Name (Company)")
+    pub caller_name_format: String,
     /// PBX_TTS: runtime text to speech (Wyoming server), None = off
     pub tts: Option<crate::tts::TtsConfig>,
     /// PBX_SCRIPT_HTTP_ALLOW: hosts/networks script apps may fetch from (empty: public internet)
@@ -391,6 +393,10 @@ impl Config {
             devices_per_user: var_or("PBX_DEVICES_PER_USER", "10").parse().unwrap_or(10),
             mobile_devices_self: var_or("PBX_MOBILE_DEVICES", "admin") == "users",
             external_books: crate::extbooks::from_env()?,
+            caller_name_format: match var_or("PBX_CALLER_NAME_FORMAT", "name_org").trim() {
+                f @ ("name" | "name_org") => f.to_string(),
+                o => anyhow::bail!("PBX_CALLER_NAME_FORMAT={o}: expected name or name_org"),
+            },
             shared_contacts: match var_or("PBX_SHARED_CONTACTS", "off").trim().to_lowercase().as_str() {
                 "off" | "" => SharedContacts::Off,
                 "read" => SharedContacts::Read,

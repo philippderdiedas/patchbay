@@ -256,6 +256,8 @@ async fn main() -> Result<()> {
         ("user_app_kinds", &user_kinds),
         // contact_name(): caller names from the shared phone book
         ("shared_contacts", &shared_contacts),
+        // contact_name(): "Name (Company)" or the name only
+        ("caller_name_format", &cfg.caller_name_format),
     ] {
         sqlx::query("INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value")
             .bind(k)

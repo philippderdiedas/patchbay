@@ -165,6 +165,10 @@ names (same words, or up to two typos), each switchable. Per pair: merge (choose
 entry that remains; the other is deleted, a shared one goes to the bin), delete one, or "not a
 duplicate" (remembered per person, undone on the same page). Merging needs edit rights on both entries.
 
+**Caller names** from contacts go to the phones as "Name (Company)" (`PBX_CALLER_NAME_FORMAT=name_org`,
+default; `name`: the name only). An entry of the company itself shows just its name. Phones cut long
+names at the end, so the person stays visible; the call window shows the company on its own line.
+
 **External phone books** (`PBX_EXTERNAL_BOOKS`, see `deploy/pbx.env.example`): read-only CardDAV
 address books of other systems, e.g. an ERP or CRM; for Dolibarr there is
 [doli-carddav-bridge](https://git.fablab-luebeck.de/fablab-public/doli-carddav-bridge). patchbay-web

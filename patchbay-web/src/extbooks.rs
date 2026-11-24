@@ -372,6 +372,20 @@ pub async fn spawn(app: AppState) -> Result<()> {
     let ids: Vec<String> = app.cfg.external_books.iter().map(|b| b.id.clone()).collect();
     sqlx::query("DELETE FROM external_contacts WHERE NOT (book = ANY($1))").bind(&ids).execute(&app.db).await?;
     sqlx::query("DELETE FROM external_books WHERE NOT (book = ANY($1))").bind(&ids).execute(&app.db).await?;
+    // fields added by an update (e.g. the X- properties) are rebuilt from the stored cards: the other
+    // server's ctag has not changed, so they would not be loaded again
+    let stale: Vec<(String, String, String)> =
+        sqlx::query_as("SELECT book, res, vcard FROM external_contacts WHERE extra = '{}' AND vcard LIKE '%X-%'").fetch_all(&app.db).await?;
+    for (book, res, vcard) in &stale {
+        if let Some(f) = card_fields(vcard) {
+            sqlx::query("UPDATE external_contacts SET extra = $3 WHERE book = $1 AND res = $2")
+                .bind(book)
+                .bind(res)
+                .bind(serde_json::Value::Object(f.extra))
+                .execute(&app.db)
+                .await?;
+        }
+    }
     for b in app.cfg.external_books.clone() {
         let app = app.clone();
         tokio::spawn(async move {

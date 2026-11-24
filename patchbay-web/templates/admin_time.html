@@ -19,26 +19,36 @@
     <tr><th>{{ c.t.s("Days") }}</th><th>{{ c.t.s("From") }}</th><th>{{ c.t.s("To") }}</th><th></th></tr>
     {% for r in rules %}
     <tr><td>{% for d in r.days() %}{{ c.t.s(d) }} {% endfor %}</td><td>{{ r.from() }}</td><td>{{ r.to() }}</td>
-      <td><form class="inline" method="post" action="/admin/times/{{ p.id }}/rules/{{ r.id }}/delete"><button class="danger">{{ c.t.s("Remove") }}</button></form></td></tr>
+      <td class="actions"><button type="button" data-fill="rule-form" data-v-id="{{ r.id }}" data-v-days="{{ r.day_list() }}" data-v-from="{{ r.from() }}" data-v-to="{{ r.to() }}">{{ c.t.s("Edit") }}</button>
+        <form class="inline" method="post" action="/admin/times/{{ p.id }}/rules/{{ r.id }}/delete"><button class="danger">{{ c.t.s("Remove") }}</button></form></td></tr>
     {% endfor %}
   </table>
   {% if rules.is_empty() %}<p class="muted">{{ c.t.s("No opening hours: the profile is always closed.") }}</p>{% endif %}
-  <form method="post" action="/admin/times/{{ p.id }}/rules" class="row" style="margin-top:12px">
+  <h4 data-edit-heading="rule-form" data-edit-text="{{ c.t.s("Edit opening hours") }}">{{ c.t.s("Add opening hours") }}</h4>
+  <form id="rule-form" method="post" action="/admin/times/{{ p.id }}/rules" class="row">
+    <input type="hidden" name="id" value="" data-edit-key autocomplete="off">
     {% for d in days %}<label><input type="checkbox" name="days" value="{{ loop.index0 }}" {% if loop.index0 < 5 %}checked{% endif %}> {{ c.t.s(d) }}</label>{% endfor %}
     <input name="from" type="time" value="08:00" required> – <input name="to" type="time" value="17:00" required>
-    <button class="primary">{{ c.t.s("Add") }}</button>
+    <button class="primary" data-adding>{{ c.t.s("Add") }}</button>
+    <button class="primary" data-editing hidden>{{ c.t.s("Save changes") }}</button>
+    <button type="reset" data-editing hidden>{{ c.t.s("Cancel") }}</button>
   </form>
 </div>
 <div class="card">
   <h3>{{ c.t.s("Own closing days") }}</h3>
   <table>
     {% for d in closures %}<tr><td>{{ d.date_str() }}</td><td>{{ d.name }}</td>
-      <td><form class="inline" method="post" action="/admin/times/{{ p.id }}/closures/{{ d.iso() }}/delete"><button class="danger">{{ c.t.s("Remove") }}</button></form></td></tr>{% endfor %}
+      <td class="actions"><button type="button" data-fill="closure-form" data-v-old_date="{{ d.iso() }}" data-v-date="{{ d.iso() }}" data-v-to="" data-v-name="{{ d.name }}">{{ c.t.s("Edit") }}</button>
+        <form class="inline" method="post" action="/admin/times/{{ p.id }}/closures/{{ d.iso() }}/delete"><button class="danger">{{ c.t.s("Remove") }}</button></form></td></tr>{% endfor %}
   </table>
-  <form method="post" action="/admin/times/{{ p.id }}/closures" class="row" style="margin-top:12px">
+  <h4 data-edit-heading="closure-form" data-edit-text="{{ c.t.s("Edit closing day") }}">{{ c.t.s("Add closing days") }}</h4>
+  <form id="closure-form" method="post" action="/admin/times/{{ p.id }}/closures" class="row">
+    <input type="hidden" name="old_date" value="" data-edit-key autocomplete="off">
     <input name="date" type="date" required> – <input name="to" type="date" title="{{ c.t.s("optional, for a range") }}">
     <input name="name" placeholder="{{ c.t.s("e.g. Christmas Eve, closing days") }}" maxlength="60">
-    <button class="primary">{{ c.t.s("Add") }}</button>
+    <button class="primary" data-adding>{{ c.t.s("Add") }}</button>
+    <button class="primary" data-editing hidden>{{ c.t.s("Save changes") }}</button>
+    <button type="reset" data-editing hidden>{{ c.t.s("Cancel") }}</button>
   </form>
 </div>
 <div class="card">

@@ -122,7 +122,8 @@ instead of "missed"), showing the caller name from the person's own contacts. No
 target (mailbox, group, person, external number) or "not available".
 
 Call groups do not use `Queue()` by default but a dial loop over `Local/<ext>@group-member`, so
-members ring only their devices and never their forwards. Options: announcement before ringing,
+members ring only their devices and never their forwards. The member order (Admin → call group,
+drag & drop) is the ringing order for "one after another" and the start order for round robin. Options: announcement before ringing,
 hold music instead of ringback, a caller-name prefix shown only on members' phones, member and
 total timeouts, then the group's no-answer target. A group can switch to **queue mode**
 (`app_queue` with the realtime views `queue_rt`/`queue_members_rt`): only free members ring (busy

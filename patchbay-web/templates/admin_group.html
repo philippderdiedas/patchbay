@@ -11,7 +11,7 @@
       <span class="muted">{{ c.t.s("shown before the caller's name on the members' phones, e.g. “DSUP” for the German support line") }}</span></td></tr>
     <tr><th>{{ c.t.s("Strategy") }}</th><td><select name="strategy">
       <option value="ringall" {% if g.strategy == "ringall" %}selected{% endif %}>{{ c.t.s("ring all") }}</option>
-      <option value="linear" {% if g.strategy == "linear" %}selected{% endif %}>{{ c.t.s("one after another (by priority)") }}</option>
+      <option value="linear" {% if g.strategy == "linear" %}selected{% endif %}>{{ c.t.s("one after another (in member order)") }}</option>
       <option value="rrmemory" {% if g.strategy == "rrmemory" %}selected{% endif %}>{{ c.t.s("round robin (start rotates)") }}</option>
     </select></td></tr>
     <tr><th>{{ c.t.s("Queue") }}</th><td><label><input type="checkbox" name="queue" {% if g.queue %}checked{% endif %}> {{ c.t.s("Callers wait in line: only free members ring, the others wait") }}</label><br>
@@ -38,20 +38,24 @@
 <div class="card">
   <h3>{{ c.t.s("Members") }}</h3>
   <p class="muted">{{ c.t.s("The devices of members with ringing switched on will ring. Members on DND, logged out or without a device are skipped. Personal forwards do not apply to group calls. Members log in and out themselves on their start page.") }}</p>
-  <div class="tablewrap"><table>
-    <tr><th>{{ c.t.s("Priority") }}</th><th>{{ c.t.s("Ext.") }}</th><th>{{ c.t.s("Name") }}</th><th>{{ c.t.s("Status") }}</th><th></th></tr>
+  {% if g.strategy == "ringall" %}<p class="muted">{{ c.t.s("The order only matters for “one after another” and “round robin”.") }}</p>{% endif %}
+  <div class="tablewrap"><table data-plain data-reorder="member-order">
+    <tr><th></th><th>{{ c.t.s("Order") }}</th><th>{{ c.t.s("Ext.") }}</th><th>{{ c.t.s("Name") }}</th><th>{{ c.t.s("Status") }}</th><th></th></tr>
     {% for m in members %}
-    <tr><td>{{ m.priority }}</td><td>{{ m.extension }}</td><td>{{ m.display_name }}{% if !m.enabled %} <span class="off">{{ c.t.s("(off)") }}</span>{% endif %}</td>
+    <tr data-id="{{ m.user_id }}"><td class="nowrap"><span class="draghandle" title="{{ c.t.s("Drag to change the order") }}" aria-hidden="true">☰</span>
+        <button type="button" class="secondary small" data-move="-1" title="{{ c.t.s("Move up") }}" aria-label="{{ c.t.s("Move up") }}">▲</button><button type="button" class="secondary small" data-move="1" title="{{ c.t.s("Move down") }}" aria-label="{{ c.t.s("Move down") }}">▼</button></td>
+      <td>{{ loop.index }}</td><td>{{ m.extension }}</td><td>{{ m.display_name }}{% if !m.enabled %} <span class="off">{{ c.t.s("(off)") }}</span>{% endif %}</td>
       <td><form class="inline" method="post" action="/admin/groups/{{ g.id }}/members/{{ m.user_id }}/login">
         {% if m.logged_in %}<span class="pill ok">{{ c.t.s("logged in") }}</span> <button>{{ c.t.s("Log out") }}</button>{% else %}<span class="pill warn">{{ c.t.s("logged out") }}</span> <input type="hidden" name="on" value="1"><button>{{ c.t.s("Log in") }}</button>{% endif %}
       </form></td>
       <td><form class="inline" method="post" action="/admin/groups/{{ g.id }}/members/{{ m.user_id }}/delete"><button class="danger">{{ c.t.s("Remove") }}</button></form></td></tr>
     {% endfor %}
   </table></div>
+  <form id="member-order" method="post" action="/admin/groups/{{ g.id }}/members/order" hidden><input type="hidden" name="order"></form>
   <form method="post" action="/admin/groups/{{ g.id }}/members" class="row" style="margin-top:12px">
     <select name="extension">{% for o in opts.users %}<option value="{{ o.0 }}">{{ o.1 }}</option>{% endfor %}</select>
-    <input name="priority" type="number" min="0" max="99" value="0" class="short" title="{{ c.t.s("Priority") }}">
-    <button class="primary">{{ c.t.s("Add / set priority") }}</button>
+    <button class="primary">{{ c.t.s("Add member") }}</button>
+    <span class="muted">{{ c.t.s("New members are added at the end; drag ☰ or use ▲ ▼ to change the ringing order.") }}</span>
   </form>
 </div>
 <form method="post" action="/admin/groups/{{ g.id }}/delete" data-confirm="{{ c.t.s("Really delete?") }}">

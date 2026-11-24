@@ -9,15 +9,25 @@
     <tr><th>{{ c.t.s("ID") }}</th><th>{{ c.t.s("Name") }}</th><th>{{ c.t.s("Language") }}</th><th>{{ c.t.s("Duration") }}</th><th>{{ c.t.s("Listen") }}</th><th>{{ c.t.s("Source") }}</th><th></th></tr>
     {% for s in sounds %}
     <tr><td>{{ s.id }}</td>
-      <td><form class="inline row" method="post" action="/admin/sounds/{{ s.id }}"><input name="name" value="{{ s.name }}" maxlength="60"><button>{{ c.t.s("Rename") }}</button></form></td>
+      <td>{{ s.name }}</td>
       <td>{{ s.language }}</td>
       <td>{% match s.duration_s %}{% when Some with (d) %}{{ "{:.1}"|format(d) }} s{% when None %}–{% endmatch %}</td>
       <td><audio controls preload="none" src="/admin/sounds/{{ s.id }}/preview"></audio></td>
       <td class="muted">{{ s.source_name }}</td>
-      <td>{% if s.used == 0 %}<form class="inline" method="post" action="/admin/sounds/{{ s.id }}/delete" data-confirm="{{ c.t.s("Really delete?") }}"><button class="danger">{{ c.t.s("Delete") }}</button></form>
+      <td class="actions"><button type="button" data-fill="sound-form" data-v-id="{{ s.id }}" data-v-name="{{ s.name }}">{{ c.t.s("Edit") }}</button>
+        {% if s.used == 0 %}<form class="inline" method="post" action="/admin/sounds/{{ s.id }}/delete" data-confirm="{{ c.t.s("Really delete?") }}"><button class="danger">{{ c.t.s("Delete") }}</button></form>
           {% else %}<span class="muted">{{ s.used }}× {{ c.t.s("used") }}</span>{% endif %}</td></tr>
     {% endfor %}
   </table></div>
+</div>
+<div class="card" data-edit-card hidden>
+  <h3>{{ c.t.s("Edit audio") }}</h3>
+  <form id="sound-form" method="post" action="/admin/sounds/edit" class="row">
+    <input type="hidden" name="id" value="" data-edit-key autocomplete="off">
+    <input name="name" placeholder="{{ c.t.s("Name") }}" maxlength="60" required>
+    <button class="primary">{{ c.t.s("Save changes") }}</button>
+    <button type="reset">{{ c.t.s("Cancel") }}</button>
+  </form>
 </div>
 <div class="card">
   <h3>{{ c.t.s("Upload audio") }}</h3>

@@ -678,6 +678,9 @@ pub async fn classes(
 #[derive(Deserialize)]
 pub struct ClassForm {
     key: String,
+    /// "1" when editing an existing class (Edit button); adding refuses a key that exists
+    #[serde(default)]
+    edit: String,
     name: String,
     description: String,
     #[serde(default)]
@@ -688,11 +691,13 @@ pub struct ClassForm {
 
 pub async fn class_save(State(app): State<AppState>, Admin(a): Admin, Form(f): Form<ClassForm>) -> Result<Response, AppError> {
     let key = f.key.trim().to_lowercase();
-    sqlx::query(
+    let editing = !f.edit.trim().is_empty();
+    let n = sqlx::query(if editing {
+        "UPDATE route_classes SET name = $2, description = $3, default_on = $4, kc_group = $5 WHERE key = $1"
+    } else {
         "INSERT INTO route_classes (key, name, description, default_on, kc_group) VALUES ($1, $2, $3, $4, $5)
-         ON CONFLICT (key) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description,
-                default_on = EXCLUDED.default_on, kc_group = EXCLUDED.kc_group",
-)
+         ON CONFLICT (key) DO NOTHING"
+    })
     .bind(&key)
     .bind(f.name.trim())
     .bind(f.description.trim())
@@ -700,7 +705,15 @@ pub async fn class_save(State(app): State<AppState>, Admin(a): Admin, Form(f): F
     .bind(Some(f.kc_group.trim()).filter(|g| !g.is_empty()))
     .execute(&app.db)
     .await
-    .map_err(|e| AppError::BadRequest(format!("Saving failed (key: a–z, 0–9, _): {e}")))?;
+    .map_err(|e| AppError::BadRequest(format!("Saving failed (key: a–z, 0–9, _): {e}")))?
+    .rows_affected();
+    if n == 0 {
+        return Err(AppError::BadRequest(if editing {
+            format!("The class {key} no longer exists. Please reload the page.")
+        } else {
+            format!("The class {key} exists already; use its Edit button.")
+        }));
+    }
     db::audit(&app.db, &a.session.sub, "class.save", &format!("class:{key}"), serde_json::json!({})).await?;
     Ok(Redirect::to("/admin/classes").into_response())
 }
@@ -874,7 +887,6 @@ pub struct MemberRow {
     user_id: i32,
     extension: i16,
     display_name: String,
-    priority: i16,
     enabled: bool,
     logged_in: bool,
 }
@@ -1013,7 +1025,7 @@ async fn load_group(db: &PgPool, id: i32) -> Result<GroupRow, AppError> {
 pub async fn group(State(app): State<AppState>, Admin(a): Admin, Path(id): Path<i32>) -> Result<Response, AppError> {
     let g = load_group(&app.db, id).await?;
     let members = sqlx::query_as(
-        "SELECT u.id AS user_id, u.extension, u.display_name, m.priority, m.enabled, m.logged_in
+        "SELECT u.id AS user_id, u.extension, u.display_name, m.enabled, m.logged_in
          FROM group_members m JOIN users u ON u.id = m.user_id
          WHERE m.group_id = $1 AND u.deleted_at IS NULL ORDER BY m.priority, u.extension",
 )
@@ -1073,31 +1085,93 @@ pub async fn group_save(
 #[derive(Deserialize)]
 pub struct MemberForm {
     extension: i16,
-    priority: i16,
 }
 
+/// Adds a person at the end of the ringing order.
 pub async fn group_member_add(
     State(app): State<AppState>,
     Admin(a): Admin,
     Path(id): Path<i32>,
     Form(f): Form<MemberForm>,
 ) -> Result<Response, AppError> {
+    load_group(&app.db, id).await?;
     let n = sqlx::query(
         "INSERT INTO group_members (group_id, user_id, priority)
-         SELECT $1, id, $3 FROM users WHERE extension = $2 AND deleted_at IS NULL
-         ON CONFLICT (group_id, user_id) DO UPDATE SET priority = EXCLUDED.priority",
+         SELECT $1, id, LEAST(COALESCE((SELECT max(priority) FROM group_members WHERE group_id = $1), 0) + 10, 32000)
+         FROM users WHERE extension = $2 AND deleted_at IS NULL
+         ON CONFLICT (group_id, user_id) DO NOTHING",
 )
     .bind(id)
     .bind(f.extension)
-    .bind(f.priority)
     .execute(&app.db)
     .await
     .map_err(anyhow::Error::from)?
     .rows_affected();
     if n == 0 {
-        return Err(AppError::BadRequest(format!("No person with extension {}.", f.extension)));
+        let exists: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM users WHERE extension = $1 AND deleted_at IS NULL)")
+            .bind(f.extension)
+            .fetch_one(&app.db)
+            .await
+            .map_err(anyhow::Error::from)?;
+        return Err(AppError::BadRequest(if exists {
+            format!("{} is already a member.", f.extension)
+        } else {
+            format!("No person with extension {}.", f.extension)
+        }));
     }
     db::audit(&app.db, &a.session.sub, "group.member_add", &format!("group-id:{id}"), serde_json::json!({"extension": f.extension})).await?;
+    Ok(Redirect::to(&format!("/admin/groups/{id}")).into_response())
+}
+
+#[derive(Deserialize)]
+pub struct OrderForm {
+    /// user ids in the new ringing order, comma-separated
+    order: String,
+}
+
+/// New ringing order (drag & drop on the group page): the list must hold exactly the current
+/// members, otherwise someone changed them in the meantime and nothing is saved.
+pub async fn group_member_order(
+    State(app): State<AppState>,
+    Admin(a): Admin,
+    Path(id): Path<i32>,
+    Form(f): Form<OrderForm>,
+) -> Result<Response, AppError> {
+    load_group(&app.db, id).await?;
+    let order: Vec<i32> = f
+        .order
+        .split(',')
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| s.trim().parse::<i32>())
+        .collect::<Result<_, _>>()
+        .map_err(|_| AppError::BadRequest("Invalid order.".into()))?;
+    let mut tx = app.db.begin().await.map_err(anyhow::Error::from)?;
+    let current: Vec<i32> = sqlx::query_scalar(
+        "SELECT m.user_id FROM group_members m JOIN users u ON u.id = m.user_id
+         WHERE m.group_id = $1 AND u.deleted_at IS NULL FOR UPDATE OF m",
+)
+    .bind(id)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(anyhow::Error::from)?;
+    let mut want = order.clone();
+    want.sort_unstable();
+    let mut have = current;
+    have.sort_unstable();
+    if want != have || order.len() > 3000 {
+        return Err(AppError::BadRequest("The member list has changed in the meantime. Please reload the page.".into()));
+    }
+    for (i, uid) in order.iter().enumerate() {
+        sqlx::query("UPDATE group_members SET priority = $3 WHERE group_id = $1 AND user_id = $2")
+            .bind(id)
+            .bind(uid)
+            .bind(((i + 1) * 10) as i16)
+            .execute(&mut *tx)
+            .await
+            .map_err(anyhow::Error::from)?;
+    }
+    tx.commit().await.map_err(anyhow::Error::from)?;
+    db::audit(&app.db, &a.session.sub, "group.member_order", &format!("group-id:{id}"), serde_json::json!({"order": order})).await?;
     Ok(Redirect::to(&format!("/admin/groups/{id}")).into_response())
 }
 

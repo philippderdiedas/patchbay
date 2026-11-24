@@ -6,10 +6,14 @@
 <div class="card">
   <h2>{{ c.t.s("Blocklist") }}</h2>
   <p class="muted">{{ c.t.s("Calls from these numbers (from outside, via a SIP trunk) are answered with “busy”; nobody's phone rings. A trailing * blocks a whole prefix, e.g. 0900* or +44*.") }}</p>
-  <form method="post" action="/admin/blocklist" class="row">
+  <h3 data-edit-heading="block-form" data-edit-text="{{ c.t.s("Edit entry") }}">{{ c.t.s("Block a number") }}</h3>
+  <form id="block-form" method="post" action="/admin/blocklist" class="row">
+    <input type="hidden" name="id" value="" data-edit-key autocomplete="off">
     <input name="number" value="{{ number }}" placeholder="0451 123456 / +44*" required maxlength="30">
     <input name="note" placeholder="{{ c.t.s("Note") }}" maxlength="200">
-    <button class="primary">{{ c.t.s("Block") }}</button>
+    <button class="primary" data-adding>{{ c.t.s("Block") }}</button>
+    <button class="primary" data-editing hidden>{{ c.t.s("Save changes") }}</button>
+    <button type="reset" data-editing hidden>{{ c.t.s("Cancel") }}</button>
   </form>
   <form method="post" action="/admin/blocklist/import" enctype="multipart/form-data" class="row" style="margin-top:12px">
     <label>{{ c.t.s("Import CSV") }} <input type="file" name="file" accept=".csv,.txt,text/csv,text/plain" required></label>
@@ -28,7 +32,8 @@
     <tr><th>{{ c.t.s("Number") }}</th><th>{{ c.t.s("Note") }}</th><th>{{ c.t.s("Blocked calls") }}</th><th>{{ c.t.s("Last") }}</th><th>{{ c.t.s("Added") }}</th><th></th></tr>
     {% for e in entries %}<tr><td><code>{{ e.pattern }}</code></td><td>{{ e.note }}</td><td>{{ e.hits }}</td>
       <td>{{ e.last_hit.clone().unwrap_or_default() }}</td><td class="muted">{{ e.created_at }} · {{ e.created_by }}</td>
-      <td><form class="inline" method="post" action="/admin/blocklist/{{ e.id }}/delete"><button class="danger">{{ c.t.s("Remove") }}</button></form></td></tr>{% endfor %}
+      <td class="actions"><button type="button" data-fill="block-form" data-v-id="{{ e.id }}" data-v-number="{{ e.pattern }}" data-v-note="{{ e.note }}">{{ c.t.s("Edit") }}</button>
+        <form class="inline" method="post" action="/admin/blocklist/{{ e.id }}/delete"><button class="danger">{{ c.t.s("Remove") }}</button></form></td></tr>{% endfor %}
   </table></div>{% endif %}
 </div>
 {% endblock %}

@@ -8,9 +8,9 @@
     <tr><th>{{ c.t.s("Number") }}</th><th>{{ c.t.s("Label") }}</th><th>{{ c.t.s("Trunk") }}</th><th>{{ c.t.s("Target") }}</th><th></th></tr>
     {% for d in dids %}
     <tr>
-      <td>{{ d.row.e164 }}</td><td>{{ d.row.label }}</td><td>{{ d.row.trunk }}</td>
+      <td><a href="/admin/numbers/{{ d.row.id }}">{{ d.row.e164 }}</a></td><td>{{ d.row.label }}</td><td>{{ d.row.trunk }}</td>
       <td>{% match d.row.target_desc %}{% when Some with (t) %}{{ c.tdesc(t) }}{% when None %}<span class="off">{{ c.t.s("no target") }}</span>{% endmatch %}</td>
-      <td class="nowrap"><a href="/admin/numbers/{{ d.row.id }}">{{ c.t.s("Edit") }}</a> · <a href="/admin/flow/did/{{ d.row.id }}">{{ c.t.s("Call flow") }}</a></td>
+      <td class="nowrap"><a href="/admin/flow/did/{{ d.row.id }}">{{ c.t.s("Call flow") }}</a></td>
     </tr>
     {% endfor %}
   </table></div>

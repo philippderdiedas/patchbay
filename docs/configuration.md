@@ -196,7 +196,8 @@ Admins add holidays by hand or import them for the current and the next year:
 
 *Preview* shows what would be imported. *Keep updated* (stored per source in the database; URL
 sources only) re-imports the source daily: only holidays of that source are replaced, manual entries
-win on the same date, edited imported holidays become manual, deleted imported holidays are not
+win on the same date, edited imported holidays become manual (moved to another date: the old date
+stays deleted), deleted imported holidays are not
 imported again (*Restore* brings them back). If a source cannot be fetched, its holidays stay and the
 error is shown next to the source. Calls are only ever routed from the stored calendar.
 

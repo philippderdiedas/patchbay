@@ -413,3 +413,12 @@ fieldset.plain { border: 0; padding: 0; margin: 0; min-width: 0; }
 .dupe-side { overflow-wrap: anywhere; }
 .card { outline: 2px solid transparent; outline-offset: 2px; transition: outline-color .6s; }
 .card.flash { outline-color: var(--accent); }
+.draghandle { padding: 4px 8px; user-select: none; color: var(--muted, inherit); }
+td.dragcell { cursor: grab; touch-action: none; user-select: none; }
+td.dragcell button { cursor: pointer; }
+button.small { padding: 1px 6px; font-size: 12px; line-height: 1.4; }
+tr.dragging { opacity: .5; }
+/* add/edit forms: the row being edited */
+tr.editing > td { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+td.actions { white-space: nowrap; text-align: right; }
+td.actions form.inline { display: inline; }

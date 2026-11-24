@@ -11,19 +11,22 @@
     <tr><th>{{ c.t.s("Date") }}</th><th>{{ c.t.s("Name") }}</th><th>{{ c.t.s("Source") }}</th><th></th></tr>
     {% for h in holidays %}
     <tr><td>{{ h.date_str() }}</td>
-      <td><form class="row" method="post" action="/admin/holidays"><input type="hidden" name="date" value="{{ h.iso() }}">
-        <input name="name" value="{{ h.name }}" maxlength="80" required> <button>{{ c.t.s("Save") }}</button></form></td>
+      <td>{{ h.name }}</td>
       <td class="muted">{% if h.source_id.is_some() %}{{ self.source_label(h.source_id) }}{% else %}{{ c.t.s("manual") }}{% endif %}</td>
-      <td><form class="inline" method="post" action="/admin/holidays/{{ h.iso() }}/delete"><button class="danger">{{ c.t.s("Remove") }}</button></form></td></tr>
+      <td class="actions"><button type="button" data-fill="holiday-form" data-v-old_date="{{ h.iso() }}" data-v-date="{{ h.iso() }}" data-v-name="{{ h.name }}">{{ c.t.s("Edit") }}</button>
+        <form class="inline" method="post" action="/admin/holidays/{{ h.iso() }}/delete"><button class="danger">{{ c.t.s("Remove") }}</button></form></td></tr>
     {% endfor %}
   </table></div>
   {% if holidays.is_empty() %}<p class="muted">{{ c.t.s("No public holidays this year and next year.") }}</p>{% endif %}
   {% if hidden > 0 %}<form method="post" action="/admin/holidays/restore" class="row"><span class="muted">{{ hidden }} {{ c.t.s("imported holidays deleted (not imported again).") }}</span>
     <button>{{ c.t.s("Restore") }}</button></form>{% endif %}
-  <h3>{{ c.t.s("Add holiday") }}</h3>
-  <form method="post" action="/admin/holidays" class="row">
+  <h3 data-edit-heading="holiday-form" data-edit-text="{{ c.t.s("Edit holiday") }}">{{ c.t.s("Add holiday") }}</h3>
+  <form id="holiday-form" method="post" action="/admin/holidays" class="row">
+    <input type="hidden" name="old_date" value="" data-edit-key autocomplete="off">
     <input name="date" type="date" required> <input name="name" placeholder="{{ c.t.s("Name") }}" maxlength="80" required>
-    <button class="primary">{{ c.t.s("Add") }}</button>
+    <button class="primary" data-adding>{{ c.t.s("Add") }}</button>
+    <button class="primary" data-editing hidden>{{ c.t.s("Save changes") }}</button>
+    <button type="reset" data-editing hidden>{{ c.t.s("Cancel") }}</button>
   </form>
 </div>
 

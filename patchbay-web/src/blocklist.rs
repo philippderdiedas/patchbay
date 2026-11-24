@@ -111,12 +111,40 @@ pub struct AddForm {
     number: String,
     #[serde(default)]
     note: String,
+    /// set when editing an entry ("Edit" fills the form): number and note of that entry change
+    #[serde(default)]
+    id: String,
 }
 
 pub async fn add(State(app): State<AppState>, Admin(a): Admin, Form(f): Form<AddForm>) -> Result<Response, AppError> {
     let p = pattern(&f.number, &app.cfg.country_code)
         .ok_or_else(|| AppError::BadRequest("Number: international (+49…) or national (0…), optionally ending in * for a prefix.".into()))?;
     let note: String = f.note.trim().chars().filter(|c| !c.is_control()).take(200).collect();
+    if !f.id.trim().is_empty() {
+        let id: i32 = f.id.trim().parse().map_err(|_| AppError::BadRequest("Invalid entry.".into()))?;
+        // a changed number starts with fresh counters: the old ones belong to the other number
+        let old: Option<String> = sqlx::query_scalar(
+            "UPDATE blocked_numbers n SET pattern = $2, note = $3,
+                    hits = CASE WHEN o.pattern = $2 THEN n.hits ELSE 0 END,
+                    last_hit = CASE WHEN o.pattern = $2 THEN n.last_hit END
+             FROM blocked_numbers o WHERE n.id = $1 AND o.id = n.id RETURNING o.pattern",
+)
+        .bind(id)
+        .bind(&p)
+        .bind(&note)
+        .fetch_optional(&app.db)
+        .await
+        .map_err(|e| {
+            if e.as_database_error().and_then(|d| d.code()).as_deref() == Some("23505") {
+                AppError::BadRequest(format!("{p} is already on the blocklist."))
+            } else {
+                AppError::Internal(e.into())
+            }
+        })?;
+        let old = old.ok_or_else(|| AppError::BadRequest("The entry no longer exists. Please reload the page.".into()))?;
+        db::audit(&app.db, &a.session.sub, "blocklist.edit", &p, serde_json::json!({"old": old, "note": note})).await?;
+        return Ok(Redirect::to("/admin/blocklist").into_response());
+    }
     sqlx::query(
         "INSERT INTO blocked_numbers (pattern, note, created_by) VALUES ($1, $2, $3)
          ON CONFLICT (pattern) DO UPDATE SET note = EXCLUDED.note",

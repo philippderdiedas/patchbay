@@ -13,8 +13,8 @@
       <td>{{ cl.name }}</td><td class="muted">{{ cl.description }}</td>
       <td>{% if cl.default_on %}{{ c.t.s("yes") }}{% endif %}</td>
       <td>{% match cl.kc_group %}{% when Some with (g) %}<code>{{ g }}</code>{% when None %}<span class="muted">–</span>{% endmatch %}</td><td>{{ cl.routes }}</td><td>{{ cl.users }}</td>
-      <td class="row">
-        <button type="button" data-fill="class-form" data-v-key="{{ cl.key }}" data-v-name="{{ cl.name }}" data-v-description="{{ cl.description }}"
+      <td class="actions">
+        <button type="button" data-fill="class-form" data-v-edit="1" data-v-key="{{ cl.key }}" data-v-name="{{ cl.name }}" data-v-description="{{ cl.description }}"
           data-v-kc_group="{% if let Some(g) = cl.kc_group %}{{ g }}{% endif %}" data-v-default_on="{% if cl.default_on %}1{% endif %}">{{ c.t.s("Edit") }}</button>
         {% if !cl.builtin && cl.routes == 0 %}
         <form class="inline" method="post" action="/admin/classes/{{ cl.key }}/delete" data-confirm="{{ c.t.s("Really delete?") }}"><button class="danger">{{ c.t.s("Delete") }}</button></form>
@@ -24,16 +24,18 @@
   </table></div>
 </div>
 <div class="card" id="class-edit">
-  <h3>{{ c.t.s("Create or change class") }}</h3>
+  <h3 data-edit-heading="class-form" data-edit-text="{{ c.t.s("Edit class") }}">{{ c.t.s("New class") }}</h3>
   <form method="post" action="/admin/classes" class="row" id="class-form">
-    <input name="key" placeholder="{{ c.t.s("key (a–z, 0–9, _)") }}" required pattern="[a-z][a-z0-9_]{1,30}">
+    <input name="key" placeholder="{{ c.t.s("key (a–z, 0–9, _)") }}" required pattern="[a-z][a-z0-9_]{1,30}" data-edit-readonly>
+    <input type="hidden" name="edit" value="" data-edit-key autocomplete="off">
     <input name="name" placeholder="{{ c.t.s("Name") }}" required>
     <input name="description" placeholder="{{ c.t.s("Description") }}">
     <input name="kc_group" placeholder="{{ c.t.s("Keycloak group (optional)") }}">
     <label><input type="checkbox" name="default_on"> {{ c.t.s("Default for new users") }}</label>
-    <button class="primary">{{ c.t.s("Save") }}</button>
+    <button class="primary" data-adding>{{ c.t.s("Add") }}</button>
+    <button class="primary" data-editing hidden>{{ c.t.s("Save changes") }}</button>
+    <button type="reset" data-editing hidden>{{ c.t.s("Cancel") }}</button>
   </form>
-  <p class="muted">{{ c.t.s("An existing key is overwritten (name, description, default).") }}</p>
   <p class="muted">{{ c.t.s("Members of the Keycloak group get the class automatically, in addition to the classes ticked per user. Group membership is refreshed at login.") }}</p>
 </div>
 <div class="card">
@@ -44,7 +46,7 @@
     <tr><td>{{ r.priority }}</td><td><a href="/admin/routes/{{ r.id }}">{{ r.name }}</a></td><td><code>{{ r.match_prefix }}</code></td>
       <td>{{ r.min_len }}–{% match r.max_len %}{% when Some with (m) %}{{ m }}{% when None %}∞{% endmatch %}</td>
       <td>{{ r.action }}</td><td>{% if r.action == "route" %}{{ r.trunks.clone().unwrap_or_default() }}{% endif %}</td><td><code>{{ r.route_class }}</code></td>
-      <td>{% if r.route_class != "emergency" %}<form class="inline" method="post" action="/admin/routes/{{ r.id }}/delete" data-confirm="{{ c.t.s("Really delete?") }}"><button class="danger">{{ c.t.s("Delete") }}</button></form>{% endif %}</td></tr>
+      <td class="actions">{% if r.route_class != "emergency" %}<form class="inline" method="post" action="/admin/routes/{{ r.id }}/delete" data-confirm="{{ c.t.s("Really delete?") }}"><button class="danger">{{ c.t.s("Delete") }}</button></form>{% endif %}</td></tr>
     {% endfor %}
   </table></div>
   <p><a href="/admin/routes/new">+ {{ c.t.s("New route") }}</a></p>

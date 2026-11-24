@@ -500,7 +500,7 @@ async fn page(app: &AppState, a: &crate::auth::CurrentUser, msg: String, preview
     .fetch_all(&app.db)
     .await
     .map_err(anyhow::Error::from)?;
-    let hidden: i64 = sqlx::query_scalar("SELECT count(*) FROM holidays WHERE region = $1 AND hidden")
+    let hidden: i64 = sqlx::query_scalar("SELECT count(*) FROM holidays WHERE region = $1 AND hidden AND NOT moved")
         .bind(CALENDAR)
         .fetch_one(&app.db)
         .await
@@ -660,39 +660,78 @@ pub async fn source_delete(State(app): State<AppState>, Admin(a): Admin, Path(id
 pub struct HolidayForm {
     date: NaiveDate,
     name: String,
+    /// set when editing (Edit button): the holiday on that date is moved to `date`
+    #[serde(default)]
+    old_date: String,
 }
 
-/// Adds a manual holiday or edits one (an edited imported holiday becomes manual).
+/// Adds a manual holiday or edits one, also its date (an edited imported holiday becomes manual;
+/// when its date changes, the imported entry stays hidden, so the next import does not bring it back).
 pub async fn holiday_save(State(app): State<AppState>, Admin(a): Admin, Form(f): Form<HolidayForm>) -> Result<Response, AppError> {
     let name: String = f.name.trim().chars().take(80).collect();
     if name.is_empty() {
         return Err(AppError::BadRequest("Name missing.".into()));
     }
+    let old: Option<NaiveDate> = match f.old_date.trim() {
+        "" => None,
+        d => Some(NaiveDate::parse_from_str(d, "%Y-%m-%d").map_err(|_| AppError::BadRequest("Invalid date.".into()))?),
+    };
+    let mut tx = app.db.begin().await.map_err(anyhow::Error::from)?;
+    if let Some(old) = old.filter(|o| *o != f.date) {
+        // another (visible) holiday on the new date: refuse instead of overwriting it
+        let taken: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM holidays WHERE region = $1 AND date = $2 AND NOT hidden)")
+            .bind(CALENDAR)
+            .bind(f.date)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(anyhow::Error::from)?;
+        if taken {
+            return Err(AppError::BadRequest(format!("There is already a holiday on {}.", f.date.format("%d.%m.%Y"))));
+        }
+        let gone = sqlx::query("DELETE FROM holidays WHERE region = $1 AND date = $2 AND source_id IS NULL AND NOT hidden")
+            .bind(CALENDAR)
+            .bind(old)
+            .execute(&mut *tx)
+            .await
+            .map_err(anyhow::Error::from)?
+            .rows_affected()
+            + sqlx::query("UPDATE holidays SET hidden = true, moved = true WHERE region = $1 AND date = $2 AND NOT hidden")
+                .bind(CALENDAR)
+                .bind(old)
+                .execute(&mut *tx)
+                .await
+                .map_err(anyhow::Error::from)?
+                .rows_affected();
+        if gone == 0 {
+            return Err(AppError::BadRequest("The holiday no longer exists. Please reload the page.".into()));
+        }
+    }
     sqlx::query(
         "INSERT INTO holidays (region, date, name) VALUES ($1, $2, $3)
-         ON CONFLICT (region, date) DO UPDATE SET name = EXCLUDED.name, source_id = NULL, hidden = false",
+         ON CONFLICT (region, date) DO UPDATE SET name = EXCLUDED.name, source_id = NULL, hidden = false, moved = false",
     )
     .bind(CALENDAR)
     .bind(f.date)
     .bind(&name)
-    .execute(&app.db)
+    .execute(&mut *tx)
     .await
     .map_err(anyhow::Error::from)?;
-    db::audit(&app.db, &a.session.sub, "holiday.save", &format!("holiday:{}", f.date), serde_json::json!({"name": name})).await?;
+    tx.commit().await.map_err(anyhow::Error::from)?;
+    db::audit(&app.db, &a.session.sub, "holiday.save", &format!("holiday:{}", f.date), serde_json::json!({"name": name, "old_date": old})).await?;
     Ok(Redirect::to("/admin/holidays").into_response())
 }
 
 /// Deletes a holiday; an imported one is hidden instead, so the next import does not bring it back.
 pub async fn holiday_delete(State(app): State<AppState>, Admin(a): Admin, Path(date): Path<NaiveDate>) -> Result<Response, AppError> {
     sqlx::query("DELETE FROM holidays WHERE region = $1 AND date = $2 AND source_id IS NULL").bind(CALENDAR).bind(date).execute(&app.db).await.map_err(anyhow::Error::from)?;
-    sqlx::query("UPDATE holidays SET hidden = true WHERE region = $1 AND date = $2").bind(CALENDAR).bind(date).execute(&app.db).await.map_err(anyhow::Error::from)?;
+    sqlx::query("UPDATE holidays SET hidden = true, moved = false WHERE region = $1 AND date = $2").bind(CALENDAR).bind(date).execute(&app.db).await.map_err(anyhow::Error::from)?;
     db::audit(&app.db, &a.session.sub, "holiday.delete", &format!("holiday:{date}"), serde_json::json!({})).await?;
     Ok(Redirect::to("/admin/holidays").into_response())
 }
 
-/// Shows hidden (deleted imported) holidays again.
+/// Shows hidden (deleted imported) holidays again; ones moved to another date stay hidden.
 pub async fn holiday_restore(State(app): State<AppState>, Admin(a): Admin) -> Result<Response, AppError> {
-    sqlx::query("UPDATE holidays SET hidden = false WHERE region = $1 AND hidden").bind(CALENDAR).execute(&app.db).await.map_err(anyhow::Error::from)?;
+    sqlx::query("UPDATE holidays SET hidden = false WHERE region = $1 AND hidden AND NOT moved").bind(CALENDAR).execute(&app.db).await.map_err(anyhow::Error::from)?;
     db::audit(&app.db, &a.session.sub, "holiday.restore", "holidays", serde_json::json!({})).await?;
     Ok(Redirect::to("/admin/holidays").into_response())
 }

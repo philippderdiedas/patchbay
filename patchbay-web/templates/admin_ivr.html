@@ -22,14 +22,24 @@
 </form>
 <div class="card">
   <h3>{{ c.t.s("Keys") }}</h3>
-  <table>
-    <tr><th>{{ c.t.s("Digit") }}</th><th>{{ c.t.s("Target") }}</th></tr>
-    {% for o in options %}<tr><td><b>{{ o.digit }}</b></td><td>{{ c.tdesc(o.target_desc) }}</td></tr>{% endfor %}
-  </table>
-  <form method="post" action="/admin/ivrs/{{ ivr.id }}/options" class="row" style="margin-top:12px">
-    <select name="digit">{% for d in ["1","2","3","4","5","6","7","8","9","0","*","#"] %}<option>{{ d }}</option>{% endfor %}</select>
+  {% if options.is_empty() %}<p class="muted">{{ c.t.s("No keys yet.") }}</p>{% else %}
+  <div class="tablewrap"><table data-plain>
+    <tr><th>{{ c.t.s("Digit") }}</th><th>{{ c.t.s("Target") }}</th><th></th></tr>
+    {% for o in options %}
+    <tr><td><b>{{ o.digit }}</b></td><td>{{ c.tdesc(o.target_desc) }}</td>
+      <td class="actions"><button type="button" data-fill="ivr-key-form" data-v-old_digit="{{ o.digit }}" data-v-digit="{{ o.digit }}" data-v-kind="{{ o.kind }}" data-v-value="{{ o.value_str() }}">{{ c.t.s("Edit") }}</button>
+        <form class="inline" method="post" action="/admin/ivrs/{{ ivr.id }}/options/delete"><input type="hidden" name="old_digit" value="{{ o.digit }}"><input type="hidden" name="digit" value="{{ o.digit }}"><input type="hidden" name="kind" value="none"><button class="danger">{{ c.t.s("Remove") }}</button></form></td></tr>
+    {% endfor %}
+  </table></div>{% endif %}
+  <h4 data-edit-heading="ivr-key-form" data-edit-text="{{ c.t.s("Edit key") }}">{{ c.t.s("Add key") }}</h4>
+  <form id="ivr-key-form" method="post" action="/admin/ivrs/{{ ivr.id }}/options" class="row">
+    <input type="hidden" name="old_digit" value="" data-edit-key autocomplete="off">
+    <select name="digit" aria-label="{{ c.t.s("Digit") }}">{% for d in digits %}<option value="{{ d.digit }}" {% if d.first_free %}selected{% endif %}>{{ d.digit }}{% if d.taken %} · {{ c.t.s("assigned") }}{% endif %}</option>{% endfor %}</select>
     {% let ts = newopt.clone() %}{% include "target_select.html" %}
-    <button class="primary">{{ c.t.s("Set") }}</button>
+    {# the edit buttons first: Enter submits with the first submit button, which must not be the disabled Add #}
+    <button class="primary" data-editing hidden>{{ c.t.s("Save changes") }}</button>
+    <button type="reset" data-editing hidden>{{ c.t.s("Cancel") }}</button>
+    <button class="primary" data-adding {% if all_taken %}disabled title="{{ c.t.s("All keys are assigned.") }}"{% endif %}>{{ c.t.s("Add") }}</button>
   </form>
 </div>
 <form method="post" action="/admin/ivrs/{{ ivr.id }}/delete" data-confirm="{{ c.t.s("Really delete?") }}"><button class="danger">{{ c.t.s("Delete IVR") }}</button></form>

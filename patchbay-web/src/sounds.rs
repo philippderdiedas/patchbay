@@ -186,17 +186,32 @@ pub async fn sound_preview(State(app): State<AppState>, Admin(_): Admin, Path(id
 }
 
 #[derive(Deserialize)]
-pub struct SoundEdit {
+pub struct SoundEditById {
+    id: i32,
     name: String,
 }
 
-pub async fn sound_rename(State(app): State<AppState>, Admin(a): Admin, Path(id): Path<i32>, Form(f): Form<SoundEdit>) -> Result<Response, AppError> {
-    let name: String = f.name.trim().chars().take(60).collect();
+/// POST /admin/sounds/edit: the edit form of the audio library (Edit button fills the id)
+pub async fn sound_edit(State(app): State<AppState>, Admin(a): Admin, Form(f): Form<SoundEditById>) -> Result<Response, AppError> {
+    rename(&app, &a.session.sub, f.id, &f.name).await
+}
+
+async fn rename(app: &AppState, actor: &str, id: i32, name: &str) -> Result<Response, AppError> {
+    let name: String = name.trim().chars().take(60).collect();
     if name.is_empty() {
         return Err(AppError::BadRequest("Name missing.".into()));
     }
-    sqlx::query("UPDATE sounds SET name = $2 WHERE id = $1").bind(id).bind(&name).execute(&app.db).await.map_err(anyhow::Error::from)?;
-    db::audit(&app.db, &a.session.sub, "sound.rename", &format!("sound:{id}"), serde_json::json!({"name": name})).await?;
+    let n = sqlx::query("UPDATE sounds SET name = $2 WHERE id = $1 AND deleted_at IS NULL")
+        .bind(id)
+        .bind(&name)
+        .execute(&app.db)
+        .await
+        .map_err(anyhow::Error::from)?
+        .rows_affected();
+    if n == 0 {
+        return Err(AppError::BadRequest("The audio file no longer exists. Please reload the page.".into()));
+    }
+    db::audit(&app.db, actor, "sound.rename", &format!("sound:{id}"), serde_json::json!({"name": name})).await?;
     Ok(Redirect::to("/admin/sounds").into_response())
 }
 
@@ -246,8 +261,28 @@ pub struct IvrRow {
 #[derive(FromRow)]
 pub struct OptionRow {
     digit: String,
+    kind: String,
+    value: Option<String>,
     target_desc: String,
 }
+
+impl OptionRow {
+    fn value_str(&self) -> &str {
+        self.value.as_deref().unwrap_or_default()
+    }
+}
+
+/// a key in the digit select of the add/edit form
+pub struct DigitOpt {
+    digit: &'static str,
+    /// assigned to a target already (shown as such; the server refuses it unless it is the edited key)
+    taken: bool,
+    /// preselected when adding: the first free key
+    first_free: bool,
+}
+
+/// all IVR keys in keypad order
+const DIGITS: [&str; 12] = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "*", "#"];
 
 const IVR_SELECT: &str = concat!(
     "SELECT i.id, i.number, i.invalid_mode, i.name, i.greeting, s.name AS greeting_name, i.timeout_s, i.repeat,
@@ -280,6 +315,8 @@ struct IvrPage {
     opts: TargetOptions,
     timeout: TargetSel,
     newopt: TargetSel,
+    digits: Vec<DigitOpt>,
+    all_taken: bool,
 }
 
 impl IvrRow {
@@ -330,18 +367,35 @@ async fn load_ivr(db: &PgPool, id: i32) -> Result<IvrRow, AppError> {
 
 pub async fn ivr(State(app): State<AppState>, Admin(a): Admin, Path(id): Path<i32>) -> Result<Response, AppError> {
     let ivr = load_ivr(&app.db, id).await?;
-    let options = sqlx::query_as(&format!(
-        "SELECT o.digit, {TARGET_DESC} AS target_desc
+    let mut options: Vec<OptionRow> = sqlx::query_as(&format!(
+        "SELECT o.digit, t.kind::text AS kind, {} AS value, {TARGET_DESC} AS target_desc
          FROM ivr_options o JOIN targets t ON t.id = o.target_id {TARGET_JOINS}
-         WHERE o.ivr_id = $1 ORDER BY o.digit"
+         WHERE o.ivr_id = $1",
+        target_value!()
     ))
     .bind(id)
     .fetch_all(&app.db)
     .await
     .map_err(anyhow::Error::from)?;
+    options.sort_by_key(|o| DIGITS.iter().position(|d| *d == o.digit));
+    let first = DIGITS.iter().copied().find(|d| !options.iter().any(|o| o.digit == *d));
+    let digits: Vec<DigitOpt> = DIGITS
+        .iter()
+        .map(|d| DigitOpt { digit: d, taken: options.iter().any(|o| o.digit == *d), first_free: first == Some(*d) })
+        .collect();
+    let all_taken = first.is_none();
     let timeout = TargetSel::new("timeout_", ivr.timeout_kind.clone(), ivr.timeout_value.clone(), "hang up");
-    let newopt = TargetSel::new("", None, None, "remove key");
-    render(IvrPage { c: Ctx::new(&app, &a).section("ivrs"), ivr, options, opts: TargetOptions::load(&app.db).await?, timeout, newopt })
+    let newopt = TargetSel::new("", None, None, "no target");
+    render(IvrPage {
+        c: Ctx::new(&app, &a).section("ivrs"),
+        ivr,
+        options,
+        opts: TargetOptions::load(&app.db).await?,
+        timeout,
+        newopt,
+        digits,
+        all_taken,
+    })
 }
 
 #[derive(Deserialize)]
@@ -392,46 +446,113 @@ pub async fn ivr_save(State(app): State<AppState>, Admin(a): Admin, Path(id): Pa
 #[derive(Deserialize)]
 pub struct OptionForm {
     digit: String,
+    /// the key's digit before the change (editing a row); empty when adding a key
+    #[serde(default)]
+    old_digit: String,
     kind: String,
     #[serde(default)]
     value: String,
 }
 
+fn check_digit(d: &str) -> Result<String, AppError> {
+    let d = d.trim();
+    if DIGITS.contains(&d) {
+        Ok(d.to_string())
+    } else {
+        Err(AppError::BadRequest("Key: 0–9, * or #.".into()))
+    }
+}
+
+/// Adds a key (no `old_digit`; refused if the key is taken) or changes one: its target and,
+/// with a different `digit`, the key itself (refused if the new key is taken).
 pub async fn ivr_option_set(State(app): State<AppState>, Admin(a): Admin, Path(id): Path<i32>, Form(f): Form<OptionForm>) -> Result<Response, AppError> {
     load_ivr(&app.db, id).await?;
-    let digit = f.digit.trim().to_string();
-    if !(digit.len() == 1 && "0123456789*#".contains(digit.as_str())) {
-        return Err(AppError::BadRequest("Key: 0–9, * or #.".into()));
+    let digit = check_digit(&f.digit)?;
+    let old = if f.old_digit.trim().is_empty() { None } else { Some(check_digit(&f.old_digit)?) };
+    if f.kind == "none" || f.kind.is_empty() {
+        return Err(AppError::BadRequest("Please select a target (Remove deletes a key).".into()));
     }
-    let existing: Option<i32> = sqlx::query_scalar("SELECT target_id FROM ivr_options WHERE ivr_id = $1 AND digit = $2")
+    let mut tx = app.db.begin().await.map_err(anyhow::Error::from)?;
+    // serialize key changes of this IVR (two admins assigning the same key); NO KEY UPDATE, as the
+    // targets row written by save_target (another connection) may reference this IVR (key → own
+    // menu), and its foreign key check takes KEY SHARE, which FOR UPDATE would block forever
+    sqlx::query("SELECT id FROM ivrs WHERE id = $1 FOR NO KEY UPDATE").bind(id).execute(&mut *tx).await.map_err(anyhow::Error::from)?;
+    let taken: Option<i32> = sqlx::query_scalar("SELECT target_id FROM ivr_options WHERE ivr_id = $1 AND digit = $2")
         .bind(id)
         .bind(&digit)
-        .fetch_optional(&app.db)
+        .fetch_optional(&mut *tx)
         .await
         .map_err(anyhow::Error::from)?;
-    match crate::admin::save_target(&app.db, existing, &TargetInput { kind: f.kind.clone(), value: f.value.clone() }).await? {
-        Some(t) => {
-            sqlx::query(
-                "INSERT INTO ivr_options (ivr_id, digit, target_id) VALUES ($1, $2, $3)
-                 ON CONFLICT (ivr_id, digit) DO UPDATE SET target_id = EXCLUDED.target_id",
-            )
-            .bind(id)
-            .bind(&digit)
-            .bind(t)
-            .execute(&app.db)
-            .await
-            .map_err(anyhow::Error::from)?;
+    let existing = match &old {
+        None if taken.is_some() => {
+            return Err(AppError::BadRequest(format!("Key {digit} is already assigned; change it in its row.")));
         }
-        None => {
-            sqlx::query("DELETE FROM ivr_options WHERE ivr_id = $1 AND digit = $2")
+        None => None,
+        Some(o) if *o != digit && taken.is_some() => {
+            return Err(AppError::BadRequest(format!("Key {digit} is already assigned.")));
+        }
+        Some(o) => Some(
+            sqlx::query_scalar::<_, i32>("SELECT target_id FROM ivr_options WHERE ivr_id = $1 AND digit = $2")
                 .bind(id)
-                .bind(&digit)
-                .execute(&app.db)
+                .bind(o)
+                .fetch_optional(&mut *tx)
                 .await
-                .map_err(anyhow::Error::from)?;
-        }
+                .map_err(anyhow::Error::from)?
+                .ok_or_else(|| AppError::BadRequest(format!("Key {o} no longer exists. Please reload the page.")))?,
+        ),
+    };
+    let t = crate::admin::save_target(&app.db, existing, &TargetInput { kind: f.kind.clone(), value: f.value.clone() })
+        .await?
+        .ok_or_else(|| AppError::BadRequest("Please select a target.".into()))?;
+    // $1 IVR, $2 key before the change (= new key when adding), $3 new key, $4 target
+    let sql = if old.is_some() {
+        "UPDATE ivr_options SET digit = $3, target_id = $4 WHERE ivr_id = $1 AND digit = $2"
+    } else {
+        "INSERT INTO ivr_options (ivr_id, digit, target_id) SELECT $1, $3, $4 WHERE $2 = $3"
+    };
+    sqlx::query(sql)
+    .bind(id)
+    .bind(old.as_deref().unwrap_or(&digit))
+    .bind(&digit)
+    .bind(t)
+    .execute(&mut *tx)
+    .await
+    .map_err(anyhow::Error::from)?;
+    tx.commit().await.map_err(anyhow::Error::from)?;
+    db::audit(
+        &app.db,
+        &a.session.sub,
+        "ivr.option",
+        &format!("ivr:{id}"),
+        serde_json::json!({"digit": digit, "old_digit": old, "kind": f.kind, "value": f.value}),
+    )
+    .await?;
+    Ok(Redirect::to(&format!("/admin/ivrs/{id}")).into_response())
+}
+
+/// Removes a key (button in its row; the row's `old_digit` names it).
+pub async fn ivr_option_delete(State(app): State<AppState>, Admin(a): Admin, Path(id): Path<i32>, Form(f): Form<OptionForm>) -> Result<Response, AppError> {
+    load_ivr(&app.db, id).await?;
+    let digit = check_digit(if f.old_digit.trim().is_empty() { &f.digit } else { &f.old_digit })?;
+    remove_option(&app, &a.session.sub, id, &digit).await
+}
+
+async fn remove_option(app: &AppState, actor: &str, id: i32, digit: &str) -> Result<Response, AppError> {
+    let mut tx = app.db.begin().await.map_err(anyhow::Error::from)?;
+    // same lock as ivr_option_set, so a concurrent edit does not lose its target row
+    sqlx::query("SELECT id FROM ivrs WHERE id = $1 FOR NO KEY UPDATE").bind(id).execute(&mut *tx).await.map_err(anyhow::Error::from)?;
+    let t: Option<i32> = sqlx::query_scalar("DELETE FROM ivr_options WHERE ivr_id = $1 AND digit = $2 RETURNING target_id")
+        .bind(id)
+        .bind(digit)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(anyhow::Error::from)?;
+    if let Some(t) = t {
+        // the key's own target row; nothing else points to it
+        sqlx::query("DELETE FROM targets WHERE id = $1").bind(t).execute(&mut *tx).await.map_err(anyhow::Error::from)?;
     }
-    db::audit(&app.db, &a.session.sub, "ivr.option", &format!("ivr:{id}"), serde_json::json!({"digit": digit, "kind": f.kind, "value": f.value})).await?;
+    tx.commit().await.map_err(anyhow::Error::from)?;
+    db::audit(&app.db, actor, "ivr.option", &format!("ivr:{id}"), serde_json::json!({"digit": digit, "kind": "none"})).await?;
     Ok(Redirect::to(&format!("/admin/ivrs/{id}")).into_response())
 }
 

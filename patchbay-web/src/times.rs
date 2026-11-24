@@ -67,6 +67,10 @@ impl RuleRow {
     fn to(&self) -> String {
         self.to_time.format("%H:%M").to_string()
     }
+    /// weekday numbers for the Edit button ("0,1,2,3,4")
+    fn day_list(&self) -> String {
+        (0..7).filter(|i| self.weekdays >> i & 1 == 1).map(|i| i.to_string()).collect::<Vec<_>>().join(",")
+    }
 }
 
 #[derive(FromRow)]
@@ -202,6 +206,9 @@ pub struct RuleForm {
     days: Vec<u8>,
     from: String,
     to: String,
+    /// set when editing a rule (Edit button)
+    #[serde(default)]
+    id: String,
 }
 
 pub async fn rule_add(State(app): State<AppState>, Admin(a): Admin, Path(id): Path<i32>, MultiForm(f): MultiForm<RuleForm>) -> Result<Response, AppError> {
@@ -215,15 +222,33 @@ pub async fn rule_add(State(app): State<AppState>, Admin(a): Admin, Path(id): Pa
     if to <= from {
         return Err(AppError::BadRequest("“To” must be after “from” (use two rules for times past midnight).".into()));
     }
-    sqlx::query("INSERT INTO time_rules (profile_id, weekdays, from_time, to_time) VALUES ($1, $2, $3, $4)")
-        .bind(id)
-        .bind(mask)
-        .bind(from)
-        .bind(to)
+    let rid: Option<i32> = match f.id.trim() {
+        "" => None,
+        r => Some(r.parse().map_err(|_| AppError::BadRequest("Invalid rule.".into()))?),
+    };
+    let q = match rid {
+        Some(rid) => sqlx::query("UPDATE time_rules SET weekdays = $2, from_time = $3, to_time = $4 WHERE profile_id = $1 AND id = $5")
+            .bind(id)
+            .bind(mask)
+            .bind(from)
+            .bind(to)
+            .bind(rid),
+        None => sqlx::query("INSERT INTO time_rules (profile_id, weekdays, from_time, to_time) VALUES ($1, $2, $3, $4)")
+            .bind(id)
+            .bind(mask)
+            .bind(from)
+            .bind(to),
+    };
+    let n = q
         .execute(&app.db)
         .await
-        .map_err(anyhow::Error::from)?;
-    db::audit(&app.db, &a.session.sub, "time.rule_add", &format!("profile:{id}"), serde_json::json!({"mask": mask, "from": f.from, "to": f.to})).await?;
+        .map_err(anyhow::Error::from)?
+        .rows_affected();
+    if n == 0 {
+        return Err(AppError::BadRequest("The rule no longer exists. Please reload the page.".into()));
+    }
+    let action = if rid.is_some() { "time.rule_edit" } else { "time.rule_add" };
+    db::audit(&app.db, &a.session.sub, action, &format!("profile:{id}"), serde_json::json!({"rule": rid, "mask": mask, "from": f.from, "to": f.to})).await?;
     Ok(Redirect::to(&format!("/admin/times/{id}")).into_response())
 }
 
@@ -245,6 +270,9 @@ pub struct ClosureForm {
     to: Option<String>,
     #[serde(default)]
     name: String,
+    /// set when editing a closing day (Edit button): that day is replaced
+    #[serde(default)]
+    old_date: String,
 }
 
 /// Adds one closing day or a range (e.g. company holidays).
@@ -257,6 +285,34 @@ pub async fn closure_add(State(app): State<AppState>, Admin(a): Admin, Path(id):
     if to < f.date || (to - f.date).num_days() > 60 {
         return Err(AppError::BadRequest("Range: at most 60 days, end not before start.".into()));
     }
+    let old: Option<NaiveDate> = match f.old_date.trim() {
+        "" => None,
+        d => Some(NaiveDate::parse_from_str(d, "%Y-%m-%d").map_err(|_| AppError::BadRequest("Invalid date.".into()))?),
+    };
+    let mut tx = app.db.begin().await.map_err(anyhow::Error::from)?;
+    if let Some(old) = old {
+        let n = sqlx::query("DELETE FROM profile_closures WHERE profile_id = $1 AND date = $2")
+            .bind(id)
+            .bind(old)
+            .execute(&mut *tx)
+            .await
+            .map_err(anyhow::Error::from)?
+            .rows_affected();
+        if n == 0 {
+            return Err(AppError::BadRequest("The closing day no longer exists. Please reload the page.".into()));
+        }
+        // editing must not silently overwrite other closing days
+        let clash: Option<NaiveDate> = sqlx::query_scalar("SELECT min(date) FROM profile_closures WHERE profile_id = $1 AND date BETWEEN $2 AND $3")
+            .bind(id)
+            .bind(f.date)
+            .bind(to)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(anyhow::Error::from)?;
+        if let Some(d) = clash {
+            return Err(AppError::BadRequest(format!("{} is already a closing day.", d.format("%d.%m.%Y"))));
+        }
+    }
     sqlx::query(
         "INSERT INTO profile_closures (profile_id, date, name)
          SELECT $1, d::date, $4 FROM generate_series($2::date, $3::date, '1 day') d
@@ -266,10 +322,12 @@ pub async fn closure_add(State(app): State<AppState>, Admin(a): Admin, Path(id):
     .bind(f.date)
     .bind(to)
     .bind(f.name.trim())
-    .execute(&app.db)
+    .execute(&mut *tx)
     .await
     .map_err(anyhow::Error::from)?;
-    db::audit(&app.db, &a.session.sub, "time.closure_add", &format!("profile:{id}"), serde_json::json!({"from": f.date, "to": to})).await?;
+    tx.commit().await.map_err(anyhow::Error::from)?;
+    let action = if old.is_some() { "time.closure_edit" } else { "time.closure_add" };
+    db::audit(&app.db, &a.session.sub, action, &format!("profile:{id}"), serde_json::json!({"old": old, "from": f.date, "to": to})).await?;
     Ok(Redirect::to(&format!("/admin/times/{id}")).into_response())
 }
 

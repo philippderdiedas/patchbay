@@ -58,28 +58,146 @@ function pbxToast(text, ok) {
       update();
     });
 
-    // "Edit" buttons: data-fill="<form id>" and data-v-<field>="value" fill that form's fields
-    // (checkboxes: checked when the value is not empty), then scroll to it and focus the first field
+    // Add/edit forms (the same look on every admin page): a row's "Edit" button
+    // (data-fill="<form id>", data-v-<field>="value") fills the form and switches it to editing:
+    // [data-adding] / [data-editing] inside the form show while adding / editing, a heading with
+    // data-edit-heading="<form id>" shows its data-edit-text, fields with data-edit-readonly are
+    // read-only, the edited row is highlighted. Reset (Cancel) clears the id field [data-edit-key]
+    // and goes back to adding.
+    function editMode(form, on, row) {
+      // not form.id: a field named "id" (blocklist, trunk rules) shadows it
+      const fid = form.getAttribute("id");
+      form.querySelectorAll("[data-editing]").forEach((el) => { el.hidden = !on; });
+      form.querySelectorAll("[data-adding]").forEach((el) => { el.hidden = on; });
+      form.querySelectorAll("[data-edit-readonly]").forEach((el) => { el.readOnly = on; });
+      form.classList.toggle("editing", on);
+      document.querySelectorAll(`[data-edit-heading="${fid}"]`).forEach((h) => {
+        if (h.dataset.addText === undefined) h.dataset.addText = h.textContent;
+        h.textContent = on ? h.dataset.editText : h.dataset.addText;
+      });
+      document.querySelectorAll(`tr.editing[data-edit-row="${fid}"]`).forEach((r) => {
+        r.classList.remove("editing");
+        r.removeAttribute("data-edit-row");
+      });
+      if (on && row) {
+        row.classList.add("editing");
+        row.dataset.editRow = fid;
+      }
+      // a card that only exists for editing (data-edit-card) shows while editing
+      const card = form.closest("[data-edit-card]");
+      if (card) card.hidden = !on;
+      if (!on) form.querySelectorAll("[data-edit-key]").forEach((el) => { el.value = ""; });
+    }
+    document.addEventListener("reset", (e) => {
+      const form = e.target;
+      if (!form.querySelector || !form.querySelector("[data-edit-key]")) return;
+      editMode(form, false);
+      // after the reset has restored the defaults: update fields that depend on others
+      setTimeout(() => form.querySelectorAll("select:not([data-autosubmit])").forEach((el) => el.dispatchEvent(new Event("change", { bubbles: true }))));
+    }, true);
+
     document.addEventListener("click", (e) => {
       const btn = e.target.closest("button[data-fill]");
       if (!btn) return;
       const form = document.getElementById(btn.dataset.fill);
       if (!form) return;
+      const changed = [];
       for (const [k, v] of Object.entries(btn.dataset)) {
         if (!k.startsWith("v") || k === "v" || k.length < 2) continue;
         // dataset turns data-v-kc_group into vKc_group
         const name = k.charAt(1).toLowerCase() + k.slice(2);
         const field = form.elements.namedItem(name);
         if (!field) continue;
-        if (field.type === "checkbox") field.checked = v !== "";
+        if (typeof RadioNodeList !== "undefined" && field instanceof RadioNodeList) {
+          // several fields of that name: checkbox/radio group (value: comma list) or the
+          // alternative value inputs of a target selector (all get the value, one is enabled)
+          const vals = v.split(",");
+          field.forEach((el) => {
+            if (el.type === "checkbox" || el.type === "radio") el.checked = vals.includes(el.value);
+            else el.value = v;
+          });
+        } else if (field.type === "checkbox") field.checked = v !== "";
         else field.value = v;
+        changed.push(field instanceof Element ? field : field[0]);
       }
+      // show/hide what depends on the filled fields (target selector, data-show-when)
+      changed.forEach((el) => el && !el.matches("[data-autosubmit]") && el.dispatchEvent(new Event("change", { bubbles: true })));
+      if (form.querySelector("[data-edit-key]")) editMode(form, true, btn.closest("tr"));
       const card = form.closest(".card") || form;
       card.scrollIntoView({ behavior: "smooth", block: "start" });
       card.classList.add("flash");
       setTimeout(() => card.classList.remove("flash"), 1200);
-      const first = form.querySelector("input:not([type=hidden]), select, textarea");
+      const first = form.querySelector("input:not([type=hidden]):not([readonly]), select, textarea");
       if (first) first.focus({ preventScroll: true });
+    });
+
+    // Reorderable tables (data-reorder="<form id>", rows with data-id): drag a row by its handle
+    // (mouse, pen or touch; Esc cancels) or use the ▲ ▼ buttons; the new order of ids goes into
+    // the form's "order" field and is saved.
+    document.querySelectorAll("table[data-reorder]").forEach((table) => {
+      const form = document.getElementById(table.dataset.reorder);
+      if (!form) return;
+      const rows = () => Array.from(table.querySelectorAll("tr[data-id]"));
+      const ids = () => rows().map((r) => r.dataset.id).join(",");
+      const save = () => {
+        form.elements.namedItem("order").value = ids();
+        form.submit();
+      };
+      const start = ids();
+      const restore = () => {
+        const byId = new Map(rows().map((r) => [r.dataset.id, r]));
+        const parent = rows()[0].parentNode;
+        start.split(",").forEach((id) => parent.appendChild(byId.get(id)));
+      };
+      // the dragged row moves in the DOM, which drops a pointer capture, so the drag listens on
+      // the document instead
+      let drag = null; // { row, pointerId }
+      const finish = (keep) => {
+        if (!drag) return;
+        drag.row.classList.remove("dragging");
+        drag = null;
+        if (!keep) restore();
+        else if (ids() !== start) save();
+      };
+      document.addEventListener("pointermove", (e) => {
+        if (!drag || e.pointerId !== drag.pointerId) return;
+        e.preventDefault();
+        const row = drag.row;
+        const over = rows().find((r) => {
+          const box = r.getBoundingClientRect();
+          return r !== row && e.clientY >= box.top && e.clientY < box.bottom;
+        });
+        if (!over) return;
+        const box = over.getBoundingClientRect();
+        over.parentNode.insertBefore(row, e.clientY > box.top + box.height / 2 ? over.nextSibling : over);
+      });
+      document.addEventListener("pointerup", (e) => { if (drag && e.pointerId === drag.pointerId) finish(true); });
+      document.addEventListener("pointercancel", (e) => { if (drag && e.pointerId === drag.pointerId) finish(false); });
+      rows().forEach((row) => {
+        // grip: the cell holding the ☰ handle (bigger target for fingers), not its ▲ ▼ buttons
+        const grip = row.querySelector(".draghandle")?.closest("td");
+        if (grip) {
+          grip.classList.add("dragcell");
+          grip.addEventListener("pointerdown", (e) => {
+            if (drag || e.button !== 0 || !e.isPrimary || e.target.closest("button")) return;
+            e.preventDefault();
+            // no implicit touch capture: moves go to whatever is under the finger and reach the document
+            if (e.target.hasPointerCapture?.(e.pointerId)) e.target.releasePointerCapture(e.pointerId);
+            drag = { row, pointerId: e.pointerId };
+            row.classList.add("dragging");
+          });
+        }
+        row.querySelectorAll("button[data-move]").forEach((b) => b.addEventListener("click", () => {
+          if (drag) return;
+          const up = b.dataset.move === "-1";
+          const other = up ? row.previousElementSibling : row.nextElementSibling;
+          if (!other || !other.dataset.id) return;
+          row.parentNode.insertBefore(row, up ? other : other.nextSibling);
+          save();
+        }));
+      });
+      document.addEventListener("keydown", (e) => { if (e.key === "Escape") finish(false); });
+      window.addEventListener("blur", () => finish(false)); // released outside the window
     });
 
     // Show parts of a form depending on a select: data-show-when="field=value" or

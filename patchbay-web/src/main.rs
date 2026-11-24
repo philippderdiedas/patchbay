@@ -474,6 +474,7 @@ async fn main() -> Result<()> {
         .route("/admin/trunks/{id}", get(trunks::trunk).post(trunks::trunk_save))
         .route("/admin/trunks/{id}/delete", post(trunks::trunk_delete))
         .route("/admin/trunks/{id}/test", post(trunks::trunk_test))
+        .route("/admin/trunks/{id}/caller-id", post(trunks::caller_id))
         .route("/admin/trunks/{id}/standard-route", post(trunks::standard_route))
         .route("/admin/trunks/{id}/rules", post(trunks::rule_add))
         .route("/admin/trunks/{id}/rules/{rid}/delete", post(trunks::rule_delete))

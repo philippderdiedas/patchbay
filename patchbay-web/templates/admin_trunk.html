@@ -69,6 +69,15 @@
     {% if !is_new %}<button type="button" data-trunktest="{{ t.id }}">{{ c.t.s("Test connection") }}</button>{% endif %}
     <a href="/admin/trunks">{{ c.t.s("Cancel") }}</a></p>
 </form>
+{% if !is_new %}
+<form method="post" action="/admin/trunks/{{ t.id }}/caller-id" class="card" id="caller-id">
+  <h3>{{ c.t.s("Caller ID of incoming calls") }}</h3>
+  <label style="display:block"><input type="checkbox" name="accept_caller_name" {% if t.accept_caller_name %}checked{% endif %}> {{ c.t.s("Take over the caller name") }}</label>
+  <label style="display:block"><input type="checkbox" name="accept_caller_number" {% if t.accept_caller_number %}checked{% endif %}> {{ c.t.s("Take over the caller number") }}</label>
+  <p class="muted">{{ c.t.s("Without the name, phones show the name from the own contacts or only the number. Without the number, the call shows as this trunk: no number, so no calling back, blocklist or notes for these calls.") }}</p>
+  <p><button>{{ c.t.s("Save") }}</button></p>
+</form>
+{% endif %}
 {% if !is_new && t.is_sip() && t.managed %}
 <div class="card">
   <h3>{{ c.t.s("Dial rules") }}</h3>

@@ -377,7 +377,7 @@ pub async fn spawn(app: AppState) -> Result<()> {
     let stale: Vec<(String, String, String)> =
         sqlx::query_as("SELECT book, res, vcard FROM external_contacts WHERE extra = '{}' AND vcard LIKE '%X-%'").fetch_all(&app.db).await?;
     for (book, res, vcard) in &stale {
-        if let Some(f) = card_fields(vcard) {
+        if let Some(f) = card_fields(vcard).filter(|f| !f.extra.is_empty()) {
             sqlx::query("UPDATE external_contacts SET extra = $3 WHERE book = $1 AND res = $2")
                 .bind(book)
                 .bind(res)

@@ -64,6 +64,11 @@ pub struct TrunkRow {
     identify_match: Option<String>,
     /// SIP: the provider shows only this trunk's own numbers (route_trunk_order() caller ID)
     clip_own_only: bool,
+    /// incoming calls: take over the caller name / number the peer sends
+    #[sqlx(default)]
+    accept_caller_name: bool,
+    #[sqlx(default)]
+    accept_caller_number: bool,
 }
 
 fn o(s: &Option<String>) -> String {
@@ -123,7 +128,7 @@ impl TrunkRow {
 const TRUNK_SELECT: &str = "SELECT id, name, kind::text AS kind, asterisk_ref, enabled, managed, host, port,
         secret_enc IS NOT NULL AS has_secret, encryption, iax_trunk, calltoken, site_prefix, iax_username, route_classes, max_channels,
         inbound_mode::text AS inbound_mode, sip_transport, username, from_user, from_domain, outbound_proxy, media_encryption,
-        codecs, identify_match, clip_own_only
+        codecs, identify_match, clip_own_only, accept_caller_name, accept_caller_number
     FROM trunks WHERE deleted_at IS NULL";
 
 // --- Config generation ----------------------------------------------------------------------
@@ -467,6 +472,8 @@ pub async fn trunk_new(State(app): State<AppState>, Admin(a): Admin, axum::extra
         codecs: vec!["g722".into(), "alaw".into()],
         identify_match: None,
         clip_own_only: false,
+        accept_caller_name: true,
+        accept_caller_number: true,
     };
     page(&app, &a, t, true).await
 }
@@ -907,6 +914,31 @@ pub async fn rule_delete(State(app): State<AppState>, Admin(a): Admin, Path((id,
     sqlx::query("DELETE FROM trunk_inbound_rules WHERE trunk_id = $1 AND id = $2").bind(id).bind(rid).execute(&app.db).await.map_err(anyhow::Error::from)?;
     db::audit(&app.db, &a.session.sub, "trunk.rule_delete", &format!("trunk-id:{id}"), serde_json::json!({"rule": rid})).await?;
     Ok(Redirect::to(&format!("/admin/trunks/{id}")).into_response())
+}
+
+#[derive(Deserialize)]
+pub struct CallerIdForm {
+    #[serde(default)]
+    accept_caller_name: Option<String>,
+    #[serde(default)]
+    accept_caller_number: Option<String>,
+}
+
+/// POST /admin/trunks/{id}/caller-id: take over the caller name / number of incoming calls
+pub async fn caller_id(State(app): State<AppState>, Admin(a): Admin, Path(id): Path<i32>, axum::Form(f): axum::Form<CallerIdForm>) -> Result<Response, AppError> {
+    let (name, number) = (f.accept_caller_name.is_some(), f.accept_caller_number.is_some());
+    let n = sqlx::query("UPDATE trunks SET accept_caller_name = $2, accept_caller_number = $3 WHERE id = $1 AND deleted_at IS NULL")
+        .bind(id)
+        .bind(name)
+        .bind(number)
+        .execute(&app.db)
+        .await
+        .map_err(anyhow::Error::from)?;
+    if n.rows_affected() == 0 {
+        return Err(AppError::NotFound);
+    }
+    db::audit(&app.db, &a.session.sub, "trunk.caller_id", &format!("trunk-id:{id}"), serde_json::json!({"name": name, "number": number})).await?;
+    Ok(Redirect::to(&format!("/admin/trunks/{id}#caller-id")).into_response())
 }
 
 pub async fn trunk_delete(State(app): State<AppState>, Admin(a): Admin, Path(id): Path<i32>) -> Result<Response, AppError> {

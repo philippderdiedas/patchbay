@@ -756,6 +756,11 @@ fn de_pairs() -> Vec<(&'static str, &'static str)> {
         // phone book page: jump links
         ("Phone books", "Telefonbücher"),
         ("On other devices", "Auf anderen Geräten"),
+        // trunks: caller ID of incoming calls
+        ("Caller ID of incoming calls", "Rufnummer und Name eingehender Anrufe"),
+        ("Take over the caller name", "Namen des Anrufenden übernehmen"),
+        ("Take over the caller number", "Nummer des Anrufenden übernehmen"),
+        ("Without the name, phones show the name from the own contacts or only the number. Without the number, the call shows as this trunk: no number, so no calling back, blocklist or notes for these calls.", "Ohne Namen zeigen die Telefone den Namen aus den eigenen Kontakten oder nur die Nummer. Ohne Nummer erscheint der Anruf als diese Leitung: keine Nummer, also kein Rückruf, keine Sperrliste und keine Notizen für diese Anrufe."),
         // webhooks (webhooks.rs)
         ("Webhooks", "Webhooks"),
         ("HTTP requests to other systems on events, defined as files in", "HTTP-Anfragen an andere Systeme bei Ereignissen, festgelegt als Dateien in"),

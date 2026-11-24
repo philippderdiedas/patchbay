@@ -35,6 +35,8 @@ pub struct CallLine {
     pub talk_s: i32,
     /// "recorded" (call_flows) or "reconstructed" (CDR only)
     pub recorded: bool,
+    /// the own number the call came in on (not annotated with contact names)
+    pub did: Option<String>,
 }
 
 /// Names for endpoints and internal numbers (devices including deleted ones, trunks, number registry).
@@ -176,6 +178,7 @@ pub fn from_flow(t: Tr, names: &Names, when: String, f: &Flow) -> CallLine {
     // does not make the call busy
     let busy = !answered && f.steps.is_empty() && f.dials.iter().any(|d| d.is_trunk() && d.status == "BUSY");
     CallLine {
+        did: f.did.clone(),
         when,
         hops,
         result: if answered { "answered" } else if f.voicemail { "voicemail" } else if busy { "busy" } else { "not answered" },
@@ -266,6 +269,8 @@ pub fn from_cdr(t: Tr, names: &Names, c: &CdrCall) -> CallLine {
         hops.push(Hop { text: t.s("voicemail").into(), detail: String::new(), num: None });
     }
     CallLine {
+        // incoming calls only: on outgoing ones dst is the number dialled, which gets a name
+        did: if names.devices.contains_key(&origin) { None } else { c.dst.clone().filter(|d| d.len() > 4) },
         when: c.when.clone(),
         hops,
         result: if c.answered { "answered" } else if c.voicemail { "voicemail" } else { "not answered" },
@@ -275,11 +280,10 @@ pub fn from_cdr(t: Tr, names: &Names, c: &CdrCall) -> CallLine {
     }
 }
 
-/// The last `limit` calls, newest first: recorded flows where present, otherwise from the CDR.
 /// "Name (Company)" of an external number for the admin log: shared phone book (if on) and external
 /// phone books only, never the persons' private contacts
 pub fn contact_label(name: &str, org: &Option<String>) -> String {
-    match org.as_deref().map(str::trim).filter(|o| !o.is_empty() && !o.eq_ignore_ascii_case(name.trim())) {
+    match org.as_deref().map(str::trim).filter(|o| !o.is_empty() && o.to_lowercase() != name.trim().to_lowercase()) {
         Some(o) => format!("{name} ({o})"),
         None => name.to_string(),
     }
@@ -296,13 +300,15 @@ pub async fn annotate(db: &PgPool, cc: &str, shared_on: bool, lines: &mut [CallL
     if e164s.is_empty() {
         return Ok(());
     }
+    // same choice as for caller names: shared phone book first (by id), then the external books
     let rows: Vec<(String, String, Option<String>)> = sqlx::query_as(
         "SELECT DISTINCT ON (n) n, name, organization FROM (
-           SELECT unnest(ARRAY[phone_e164, mobile_e164]) AS n, name, organization, 0 AS prio, id::text AS k
-           FROM contacts WHERE $2 AND user_id IS NULL AND deleted_at IS NULL
+           SELECT unnest(ARRAY[phone_e164, mobile_e164]) AS n, name, organization, 0 AS prio, id AS k, '' AS ext
+           FROM contacts WHERE $2 AND user_id IS NULL AND deleted_at IS NULL AND (phone_e164 = ANY($1) OR mobile_e164 = ANY($1))
            UNION ALL
-           SELECT unnest(ARRAY[phone_e164, mobile_e164]), name, organization, 1, book || '/' || res FROM external_contacts
-         ) x WHERE n = ANY($1) ORDER BY n, prio, k",
+           SELECT unnest(ARRAY[phone_e164, mobile_e164]), name, organization, 1, 0, book || '/' || res
+           FROM external_contacts WHERE phone_e164 = ANY($1) OR mobile_e164 = ANY($1)
+         ) x WHERE n = ANY($1) ORDER BY n, prio, k, ext",
     )
     .bind(&e164s)
     .bind(shared_on)
@@ -310,14 +316,23 @@ pub async fn annotate(db: &PgPool, cc: &str, shared_on: bool, lines: &mut [CallL
     .await?;
     let by: HashMap<String, String> = rows.into_iter().map(|(n, name, org)| (n, contact_label(&name, &org))).collect();
     for l in lines.iter_mut() {
+        let did = l.did.as_deref().and_then(|d| crate::blocklist::full_number(d, cc));
         for h in l.hops.iter_mut() {
-            let Some(label) = h.num.as_deref().and_then(|n| crate::blocklist::full_number(n, cc)).and_then(|e| by.get(&e)) else { continue };
-            h.detail = if h.detail.is_empty() { label.clone() } else { format!("{label}, {}", h.detail) };
+            let Some(e) = h.num.as_deref().and_then(|n| crate::blocklist::full_number(n, cc)) else { continue };
+            // the own number the call came in on stays as it is
+            if did.as_deref() == Some(e.as_str()) {
+                continue;
+            }
+            let Some(label) = by.get(&e) else { continue };
+            // the name the caller sent may be the same: keep it once
+            let rest: Vec<&str> = h.detail.split(", ").filter(|p| !p.is_empty() && !label.to_lowercase().contains(&p.to_lowercase())).collect();
+            h.detail = std::iter::once(label.as_str()).chain(rest).collect::<Vec<_>>().join(", ");
         }
     }
     Ok(())
 }
 
+/// The last `limit` calls, newest first: recorded flows where present, otherwise from the CDR.
 pub async fn lines(t: Tr, db: &PgPool, limit: i64) -> anyhow::Result<Vec<CallLine>> {
     let names = Names::load(db).await?;
     let calls: Vec<CdrCall> = sqlx::query_as(

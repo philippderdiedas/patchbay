@@ -736,7 +736,7 @@ pub async fn calls_of(db: &sqlx::PgPool, uid: i32, limit: i64) -> Result<Vec<Cal
                 COALESCE(
                   -- own contacts first, then the shared phone book (settings.shared_contacts)
                   -- Name (Company) like on the phones (settings.caller_name_format)
-                  (SELECT CASE WHEN fmt.v = 'name_org' AND COALESCE(btrim(k.organization), '') NOT IN ('', btrim(k.name))
+                  (SELECT CASE WHEN fmt.v = 'name_org' AND COALESCE(btrim(k.organization), '') <> '' AND lower(btrim(k.organization)) <> lower(btrim(k.name))
                                THEN k.name || ' (' || btrim(k.organization) || ')' ELSE k.name END FROM contacts k
                    WHERE (k.user_id = $1 OR (k.user_id IS NULL AND k.deleted_at IS NULL
                                              AND COALESCE((SELECT value FROM settings WHERE key = 'shared_contacts'), 'off') <> 'off'))
@@ -746,7 +746,7 @@ pub async fn calls_of(db: &sqlx::PgPool, uid: i32, limit: i64) -> Result<Vec<Cal
                    ORDER BY k.user_id IS NULL, k.id LIMIT 1),
                   (SELECT x.display_name FROM users x WHERE x.extension::text = c.number AND x.deleted_at IS NULL),
                   -- then the external phone books: external numbers only (E.164), never an internal one
-                  (SELECT CASE WHEN fmt.v = 'name_org' AND COALESCE(btrim(x.organization), '') NOT IN ('', btrim(x.name))
+                  (SELECT CASE WHEN fmt.v = 'name_org' AND COALESCE(btrim(x.organization), '') <> '' AND lower(btrim(x.organization)) <> lower(btrim(x.name))
                                THEN x.name || ' (' || btrim(x.organization) || ')' ELSE x.name END FROM external_contacts x
                    WHERE x.phone_e164 IN (c.number, nat.e164) OR x.mobile_e164 IN (c.number, nat.e164)
                    ORDER BY x.book, x.res LIMIT 1)) AS name

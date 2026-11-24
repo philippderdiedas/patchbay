@@ -276,6 +276,48 @@ pub fn from_cdr(t: Tr, names: &Names, c: &CdrCall) -> CallLine {
 }
 
 /// The last `limit` calls, newest first: recorded flows where present, otherwise from the CDR.
+/// "Name (Company)" of an external number for the admin log: shared phone book (if on) and external
+/// phone books only, never the persons' private contacts
+pub fn contact_label(name: &str, org: &Option<String>) -> String {
+    match org.as_deref().map(str::trim).filter(|o| !o.is_empty() && !o.eq_ignore_ascii_case(name.trim())) {
+        Some(o) => format!("{name} ({o})"),
+        None => name.to_string(),
+    }
+}
+
+/// Adds the contact names to the external numbers of the lines (one query for all numbers).
+pub async fn annotate(db: &PgPool, cc: &str, shared_on: bool, lines: &mut [CallLine]) -> anyhow::Result<()> {
+    let mut e164s: Vec<String> = lines
+        .iter()
+        .flat_map(|l| l.hops.iter().filter_map(|h| h.num.as_deref().and_then(|n| crate::blocklist::full_number(n, cc))))
+        .collect();
+    e164s.sort();
+    e164s.dedup();
+    if e164s.is_empty() {
+        return Ok(());
+    }
+    let rows: Vec<(String, String, Option<String>)> = sqlx::query_as(
+        "SELECT DISTINCT ON (n) n, name, organization FROM (
+           SELECT unnest(ARRAY[phone_e164, mobile_e164]) AS n, name, organization, 0 AS prio, id::text AS k
+           FROM contacts WHERE $2 AND user_id IS NULL AND deleted_at IS NULL
+           UNION ALL
+           SELECT unnest(ARRAY[phone_e164, mobile_e164]), name, organization, 1, book || '/' || res FROM external_contacts
+         ) x WHERE n = ANY($1) ORDER BY n, prio, k",
+    )
+    .bind(&e164s)
+    .bind(shared_on)
+    .fetch_all(db)
+    .await?;
+    let by: HashMap<String, String> = rows.into_iter().map(|(n, name, org)| (n, contact_label(&name, &org))).collect();
+    for l in lines.iter_mut() {
+        for h in l.hops.iter_mut() {
+            let Some(label) = h.num.as_deref().and_then(|n| crate::blocklist::full_number(n, cc)).and_then(|e| by.get(&e)) else { continue };
+            h.detail = if h.detail.is_empty() { label.clone() } else { format!("{label}, {}", h.detail) };
+        }
+    }
+    Ok(())
+}
+
 pub async fn lines(t: Tr, db: &PgPool, limit: i64) -> anyhow::Result<Vec<CallLine>> {
     let names = Names::load(db).await?;
     let calls: Vec<CdrCall> = sqlx::query_as(
@@ -379,6 +421,14 @@ mod tests {
             texts(&l),
             ["+4917612345678 [via 053]", "+494012345 [number dialled]", "IVR 7000 Start", "1015 Andreas [iPhone (2012) ✓]"]
         );
+    }
+
+    #[test]
+    fn labels() {
+        assert_eq!(contact_label("Hauke Oldsen", &Some("Cedgetec GmbH".into())), "Hauke Oldsen (Cedgetec GmbH)");
+        assert_eq!(contact_label("Cedgetec GmbH", &Some("cedgetec gmbh".into())), "Cedgetec GmbH");
+        assert_eq!(contact_label("A", &Some(" ".into())), "A");
+        assert_eq!(contact_label("A", &None), "A");
     }
 
     #[test]

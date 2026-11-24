@@ -735,7 +735,9 @@ pub async fn calls_of(db: &sqlx::PgPool, uid: i32, limit: i64) -> Result<Vec<Cal
                 COALESCE(c.billsec, 0) AS billsec,
                 COALESCE(
                   -- own contacts first, then the shared phone book (settings.shared_contacts)
-                  (SELECT k.name FROM contacts k
+                  -- Name (Company) like on the phones (settings.caller_name_format)
+                  (SELECT CASE WHEN fmt.v = 'name_org' AND COALESCE(btrim(k.organization), '') NOT IN ('', btrim(k.name))
+                               THEN k.name || ' (' || btrim(k.organization) || ')' ELSE k.name END FROM contacts k
                    WHERE (k.user_id = $1 OR (k.user_id IS NULL AND k.deleted_at IS NULL
                                              AND COALESCE((SELECT value FROM settings WHERE key = 'shared_contacts'), 'off') <> 'off'))
                      AND (k.phone = c.number OR k.mobile = c.number
@@ -744,13 +746,15 @@ pub async fn calls_of(db: &sqlx::PgPool, uid: i32, limit: i64) -> Result<Vec<Cal
                    ORDER BY k.user_id IS NULL, k.id LIMIT 1),
                   (SELECT x.display_name FROM users x WHERE x.extension::text = c.number AND x.deleted_at IS NULL),
                   -- then the external phone books: external numbers only (E.164), never an internal one
-                  (SELECT x.name FROM external_contacts x
+                  (SELECT CASE WHEN fmt.v = 'name_org' AND COALESCE(btrim(x.organization), '') NOT IN ('', btrim(x.name))
+                               THEN x.name || ' (' || btrim(x.organization) || ')' ELSE x.name END FROM external_contacts x
                    WHERE x.phone_e164 IN (c.number, nat.e164) OR x.mobile_e164 IN (c.number, nat.e164)
                    ORDER BY x.book, x.res LIMIT 1)) AS name
          FROM calls c
          -- national number (0…) as E.164 with the site's country code (settings.country_code, PBX_COUNTRY_CODE)
          LEFT JOIN LATERAL (SELECT '+' || s.value || substr(c.number, 2) AS e164 FROM settings s
                             WHERE s.key = 'country_code' AND c.number LIKE '0%' AND c.number NOT LIKE '00%') nat ON true
+         CROSS JOIN (SELECT COALESCE((SELECT value FROM settings WHERE key = 'caller_name_format'), 'name') AS v) fmt
          -- drop internal helper legs (empty / invalid / 's' destinations) and calls to oneself through a group
          WHERE COALESCE(c.number, '') NOT IN ('', 'i', 's', 'h')
            AND NOT (c.direction = 'in' AND c.number = (SELECT extension::text FROM users WHERE id = $1))

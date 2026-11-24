@@ -1336,7 +1336,9 @@ pub async fn log_calls_csv(
 
 pub async fn log(State(app): State<AppState>, Admin(a): Admin) -> Result<Response, AppError> {
     let c = Ctx::new(&app, &a).section("log");
-    let calls = crate::callflow::lines(c.t, &app.db, 500).await?;
+    let mut calls = crate::callflow::lines(c.t, &app.db, 500).await?;
+    // names of external numbers: shared phone book and external phone books (no private contacts)
+    crate::callflow::annotate(&app.db, &app.cfg.country_code, app.cfg.shared_contacts.on(), &mut calls).await?;
     let audit = sqlx::query_as(
         "SELECT to_char(at, 'DD.MM.YY HH24:MI') AS at,
                 COALESCE((SELECT display_name FROM users WHERE kc_subject = a.actor OR 'local:' || id = a.actor LIMIT 1), a.actor) AS actor,

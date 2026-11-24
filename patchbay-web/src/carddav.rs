@@ -865,7 +865,7 @@ async fn handle_inner(app: &AppState, method: Method, uri: Uri, headers: &Header
             c.extend(shared(app, &me).await?);
             if me.phone {
                 for b in &app.cfg.external_books {
-                    c.extend(external(app, &b.id).await?);
+                    c.extend(external_prefixed(app, &b.id).await?);
                 }
             }
             c.extend(services(app, t).await?);
@@ -1049,9 +1049,14 @@ async fn delete_contact(app: &AppState, me: &Principal, owner: Owner, res: Optio
     status(StatusCode::NO_CONTENT)
 }
 
-/// Cards of an external phone book (stored copies, read-only)
+/// Cards of an external phone book (stored copies, read-only); in the combined book the names get the
+/// prefix "ext-<id>-" (two books of the same software use the same names)
 async fn external(app: &AppState, book: &str) -> anyhow::Result<Vec<Card>> {
     Ok(crate::extbooks::cards(app, book).await?.into_iter().map(|(res, vcard)| Card { hay: vcard.to_lowercase(), res, vcard }).collect())
+}
+
+async fn external_prefixed(app: &AppState, book: &str) -> anyhow::Result<Vec<Card>> {
+    Ok(external(app, book).await?.into_iter().map(|c| Card { res: format!("ext-{book}-{}", c.res), ..c }).collect())
 }
 
 /// Fields and stored card of a contact (for edits in the web UI): the person's own (`Some(uid)`) or a

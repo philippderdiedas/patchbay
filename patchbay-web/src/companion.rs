@@ -668,8 +668,9 @@ async fn book_entries(app: &AppState, uid: i32, t: crate::i18n::Tr) -> Result<Ve
                SELECT name, organization, phone, mobile, 0 AS src, id::text AS k FROM contacts
                WHERE user_id = $1 OR ($2 AND user_id IS NULL AND deleted_at IS NULL)
                UNION ALL
-               SELECT name, organization, phone, mobile, 1, book || '/' || res FROM external_contacts
-               WHERE phone IS NOT NULL OR mobile IS NOT NULL
+               SELECT name, organization, phone, mobile, 1, book || '/' || res FROM (
+                 SELECT * FROM external_contacts WHERE phone IS NOT NULL OR mobile IS NOT NULL ORDER BY lower(name) LIMIT 5000
+               ) e
              ) x ORDER BY lower(name), src, k",
         )
             .bind(uid)
@@ -834,7 +835,7 @@ pub async fn context(State(app): State<AppState>, u: CurrentUser, Query(q): Quer
     // external phone books: same matching; the book's display name from the configuration
     let ext: Option<(String, String, Option<String>)> = sqlx::query_as(
         "SELECT book, name, url FROM external_contacts WHERE length($1) > 4
-           AND (phone = $1 OR mobile = $1 OR phone_e164 = caller_e164($1) OR mobile_e164 = caller_e164($1))
+           AND (phone_e164 = caller_e164($1) OR mobile_e164 = caller_e164($1))
          ORDER BY book, res LIMIT 1",
     )
     .bind(&number)

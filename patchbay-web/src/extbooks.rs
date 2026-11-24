@@ -26,6 +26,8 @@ use crate::AppState;
 const BATCH: usize = 100;
 /// Cards per book at most (protects the database against a misconfigured URL)
 const MAX_CARDS: usize = 50000;
+/// One answer of the other server at most (a listing of MAX_CARDS hrefs is far below)
+const MAX_RESPONSE: usize = 64 * 1024 * 1024;
 
 #[derive(Clone, Debug)]
 pub struct ExtBook {
@@ -55,11 +57,18 @@ pub fn from_env() -> Result<Vec<ExtBook>> {
         if !(url.starts_with("https://") || url.starts_with("http://")) {
             bail!("{}: http(s) URL expected", key("URL"));
         }
+        // credentials belong in _USER/_PASSWORD: a URL ends up in error messages shown to users
+        if url.split("://").nth(1).and_then(|r| r.split('/').next()).is_some_and(|host| host.contains('@')) {
+            bail!("{}: no user:password@ in the URL, use {} and {}", key("URL"), key("USER"), key("PASSWORD_FILE"));
+        }
         let password = match (get("PASSWORD"), get("PASSWORD_FILE")) {
             (Some(p), _) => Some(p),
             (None, Some(f)) => Some(std::fs::read_to_string(&f).with_context(|| format!("{}: {f} not readable", key("PASSWORD_FILE")))?.trim().to_string()),
             _ => None,
         };
+        if url.starts_with("http://") && get("USER").is_some() {
+            tracing::warn!("{}: plain http, the password travels unencrypted", key("URL"));
+        }
         out.push(ExtBook {
             name: get("NAME").unwrap_or_else(|| raw.to_string()),
             url: if url.ends_with('/') { url } else { format!("{url}/") },
@@ -184,30 +193,12 @@ fn href_path(h: &str) -> String {
     p.to_string()
 }
 
-/// The last path segment of an href (resource name, percent-decoded)
+/// The last path segment of an href as resource name: kept as sent (still percent-encoded, so it
+/// can go back into an href), other characters than A-Z a-z 0-9 . _ - % replaced by "_"
 pub fn res_name(h: &str) -> String {
     let p = href_path(h);
-    let seg = p.trim_end_matches('/').rsplit('/').next().unwrap_or("").to_string();
-    percent_decode(&seg)
-}
-
-fn percent_decode(s: &str) -> String {
-    let hex = |c: u8| (c as char).to_digit(16).map(|d| d as u8);
-    let b = s.as_bytes();
-    let mut out = Vec::with_capacity(b.len());
-    let mut i = 0;
-    while i < b.len() {
-        if b[i] == b'%' && i + 2 < b.len() {
-            if let (Some(h), Some(l)) = (hex(b[i + 1]), hex(b[i + 2])) {
-                out.push(h * 16 + l);
-                i += 3;
-                continue;
-            }
-        }
-        out.push(b[i]);
-        i += 1;
-    }
-    String::from_utf8_lossy(&out).into_owned()
+    let seg = p.trim_end_matches('/').rsplit('/').next().unwrap_or("");
+    seg.chars().take(200).map(|c| if c.is_ascii_alphanumeric() || "._-%".contains(c) { c } else { '_' }).collect()
 }
 
 /// A card as stored: the fields Patchbay uses plus the link (vCard URL) and the card itself
@@ -232,7 +223,12 @@ pub fn card_fields(vcard: &str) -> Option<ExtCard> {
 }
 
 fn client() -> Result<reqwest::Client> {
-    Ok(reqwest::Client::builder().timeout(std::time::Duration::from_secs(60)).user_agent(concat!("patchbay/", env!("CARGO_PKG_VERSION"))).build()?)
+    // no redirects: a 307/308 would repeat the request (with the login) elsewhere
+    Ok(reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .redirect(reqwest::redirect::Policy::none())
+        .user_agent(concat!("patchbay/", env!("CARGO_PKG_VERSION")))
+        .build()?)
 }
 
 async fn dav(http: &reqwest::Client, b: &ExtBook, method: &str, url: &str, depth: &str, body: String) -> Result<String> {
@@ -244,12 +240,23 @@ async fn dav(http: &reqwest::Client, b: &ExtBook, method: &str, url: &str, depth
     if let Some(u) = &b.user {
         req = req.basic_auth(u, b.password.as_ref());
     }
-    let r = req.send().await.with_context(|| format!("{method} {url}"))?;
+    // error texts are shown on the phone book page: no URL in them (reqwest adds it otherwise)
+    let mut r = req.send().await.map_err(|e| anyhow::anyhow!("{method}: {}", e.without_url()))?;
     let status = r.status();
     if status.as_u16() != 207 {
-        bail!("{method} {url}: HTTP {status}");
+        bail!("{method}: HTTP {status}");
     }
-    Ok(r.text().await?)
+    if r.content_length().is_some_and(|n| n as usize > MAX_RESPONSE) {
+        bail!("{method}: answer larger than {} MB", MAX_RESPONSE / 1024 / 1024);
+    }
+    let mut body: Vec<u8> = vec![];
+    while let Some(chunk) = r.chunk().await.map_err(|e| anyhow::anyhow!("{method}: {}", e.without_url()))? {
+        if body.len() + chunk.len() > MAX_RESPONSE {
+            bail!("{method}: answer larger than {} MB", MAX_RESPONSE / 1024 / 1024);
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(String::from_utf8_lossy(&body).into_owned())
 }
 
 /// Loads one book; returns the number of cards, or None when the ctag was unchanged.
@@ -278,20 +285,30 @@ pub async fn sync(app: &AppState, b: &ExtBook) -> Result<Option<usize>> {
     if remote.len() > MAX_CARDS {
         bail!("{} cards, at most {MAX_CARDS}", remote.len());
     }
+    let have: i64 = sqlx::query_scalar("SELECT count(*) FROM external_contacts WHERE book = $1").bind(&b.id).fetch_one(&app.db).await?;
+    if remote.is_empty() && have > 0 {
+        // an empty listing is more likely a broken answer than a deleted address book
+        bail!("the server lists no cards, kept the {have} loaded ones");
+    }
     let local: HashMap<String, String> =
         sqlx::query_as::<_, (String, String)>("SELECT res, COALESCE(etag, '') FROM external_contacts WHERE book = $1").bind(&b.id).fetch_all(&app.db).await?.into_iter().collect();
     let changed: Vec<&(String, String, String)> = remote.iter().filter(|(res, _, etag)| etag.is_empty() || local.get(res) != Some(etag)).collect();
     // fetch new and changed cards
-    let mut cards: Vec<(String, String, String)> = vec![]; // (res, etag, vcard)
+    let mut cards: Vec<(String, String, String)> = vec![]; // (res, etag of the listing, vcard)
     for chunk in changed.chunks(BATCH) {
+        let wanted: HashMap<&str, &str> = chunk.iter().map(|(res, _, etag)| (res.as_str(), etag.as_str())).collect();
         let hrefs: String = chunk.iter().map(|(_, h, _)| format!("<d:href>{}</d:href>", h.replace('&', "&amp;").replace('<', "&lt;"))).collect();
         let body = format!(
             r#"<?xml version="1.0" encoding="utf-8"?><c:addressbook-multiget xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav"><d:prop><d:getetag/><c:address-data/></d:prop>{hrefs}</c:addressbook-multiget>"#
         );
         for i in parse_multistatus(&dav(&http, b, "REPORT", &b.url, "1", body).await?)? {
-            if let Some(data) = i.data {
-                cards.push((res_name(&i.href), i.etag.unwrap_or_default(), data));
+            let res = res_name(&i.href);
+            // only cards that were asked for, at most 512 KB each; NUL bytes are not allowed in PostgreSQL text
+            let (Some(etag), Some(data)) = (wanted.get(res.as_str()), i.data) else { continue };
+            if data.len() > 512 * 1024 {
+                continue;
             }
+            cards.push((res, etag.to_string(), data.replace('\0', "")));
         }
     }
     let keep: Vec<String> = remote.iter().map(|(r, _, _)| r.clone()).collect();
@@ -373,12 +390,10 @@ pub async fn spawn(app: AppState) -> Result<()> {
 
 #[derive(sqlx::FromRow, Clone, Debug)]
 pub struct ExtContact {
-    pub res: String,
     pub name: String,
     pub organization: Option<String>,
     pub phone: Option<String>,
     pub mobile: Option<String>,
-    pub email: Option<String>,
     pub url: Option<String>,
 }
 
@@ -402,7 +417,7 @@ pub async fn books(app: &AppState) -> anyhow::Result<Vec<BookView>> {
     let mut out = vec![];
     for b in &app.cfg.external_books {
         let entries: Vec<ExtContact> = sqlx::query_as(
-            "SELECT res, name, organization, phone, mobile, email, url FROM external_contacts WHERE book = $1 ORDER BY lower(name), res",
+            "SELECT name, organization, phone, mobile, url FROM external_contacts WHERE book = $1 ORDER BY lower(name), res",
         )
         .bind(&b.id)
         .fetch_all(&app.db)
@@ -451,7 +466,8 @@ END:VCARD]]></address-data></prop></propstat></response>
         assert_eq!(items[1].etag.as_deref(), Some("\"e1\""));
         assert!(items[1].data.as_deref().unwrap().contains("FN:A & B"));
         assert_eq!(res_name(&items[1].href), "soc-1.vcf");
-        assert_eq!(res_name(&items[2].href), "c d.vcf");
+        assert_eq!(res_name(&items[2].href), "c%20d.vcf", "kept encoded: goes back into hrefs");
+        assert_eq!(res_name("/b/x y#?.vcf"), "x_y__.vcf");
         assert!(items[2].data.as_deref().unwrap().contains("FN:<x>"));
     }
 

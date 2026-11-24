@@ -57,22 +57,22 @@ CREATE OR REPLACE FUNCTION contact_name(ext text, num text) RETURNS text
     -- no quotes, commas, backslashes or control characters: the name goes into CALLERID(name), and
     -- func_odbc would escape commas
     SELECT btrim(regexp_replace(name, '[[:cntrl:][:space:]",\\]+', ' ', 'g')) FROM (
-        SELECT k.name, 0 AS prio, k.id
+        SELECT k.name, 0 AS prio, k.id, '' AS ext
         FROM contacts k JOIN users u ON u.id = k.user_id, e
         WHERE u.extension::text = ext AND u.deleted_at IS NULL AND length(e.raw) > 4
           AND (k.phone = e.raw OR k.mobile = e.raw OR k.phone_e164 = e.e164 OR k.mobile_e164 = e.e164)
         UNION ALL
-        SELECT k.name, 1 AS prio, k.id
+        SELECT k.name, 1 AS prio, k.id, ''
         FROM contacts k, e
         WHERE k.user_id IS NULL AND k.deleted_at IS NULL AND length(e.raw) > 4
           AND COALESCE((SELECT value FROM settings WHERE key = 'shared_contacts'), 'off') <> 'off'
           AND (k.phone = e.raw OR k.mobile = e.raw OR k.phone_e164 = e.e164 OR k.mobile_e164 = e.e164)
         UNION ALL
-        SELECT x.name, 2 AS prio, 0 AS id
+        -- external books: by the full number only (a short code there must not name a colleague)
+        SELECT x.name, 2 AS prio, 0, x.book || '/' || x.res
         FROM external_contacts x, e
-        WHERE length(e.raw) > 4
-          AND (x.phone = e.raw OR x.mobile = e.raw OR x.phone_e164 = e.e164 OR x.mobile_e164 = e.e164)
+        WHERE length(e.raw) > 4 AND e.e164 IS NOT NULL AND (x.phone_e164 = e.e164 OR x.mobile_e164 = e.e164)
     ) m
-    ORDER BY prio, id
+    ORDER BY prio, id, ext
     LIMIT 1
 $$;

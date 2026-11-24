@@ -527,7 +527,8 @@ document.addEventListener("DOMContentLoaded", () => {
       if (x.contact) {
         d.append(el("a", { href: `/contacts/${x.contact.id}`, text: `${t("Open contact")}: ${x.contact.name}` }));
       } else {
-        const q = new URLSearchParams({ phone: x.e164 || c.number, name: c.name || "" });
+        // prefill with the entry's own name (c.name may be "Name (Company)")
+        const q = new URLSearchParams({ phone: x.e164 || c.number, name: (x.external && x.external.name) || c.name || "" });
         d.append(el("a", { href: `/contacts/new?${q}`, text: `+ ${t("Save as contact")}` }));
       }
       if (x.e164 && c.incoming) {
@@ -549,11 +550,14 @@ document.addEventListener("DOMContentLoaded", () => {
       // own contact (saved during the call) unless the shown name already has it (group prefix)
       const ctx = ctxCache.get(c.number);
       const hit = ctx && (ctx.contact || ctx.external);
-      const contact = hit ? hit.name : "";
-      const name = contact && !(c.name || "").includes(contact) ? contact : c.name;
+      // the phone system may send "Name (Company)" (PBX_CALLER_NAME_FORMAT): here the company gets its own line
+      const norm = (s) => (s || "").replace(/[\x00-\x1f\s",\\]+/g, " ").trim().toLowerCase();
+      let base = c.name || "";
+      if (hit && hit.organization && base.endsWith(")")) base = base.replace(/\s*\([^()]*\)$/, "");
+      const name = hit && !base.includes(hit.name) ? hit.name : base;
       card.append(el("div", { class: "cmp-who", text: name || c.number || "?" }));
-      // company of a contact (not for a company's own entry, where it equals the name)
-      const org = hit && hit.organization && hit.organization !== (name || "") ? hit.organization : "";
+      // company of a contact (not for a company's own entry, where it is the name)
+      const org = hit && hit.organization && !norm(name).includes(norm(hit.organization)) ? hit.organization : "";
       if (org) card.append(el("div", { class: "cmp-org", text: org }));
       const sub = [name ? c.number : "", c.via ? `${t("via")} ${c.via}` : "", c.muted ? t("Muted") : ""].filter(Boolean).join(" · ");
       if (sub) card.append(el("div", { class: "cmp-sub", text: sub }));

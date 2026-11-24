@@ -24,7 +24,8 @@ CREATE OR REPLACE FUNCTION contact_name(ext text, num text) RETURNS text
     -- func_odbc would escape commas
     SELECT btrim(regexp_replace(
                CASE WHEN COALESCE((SELECT value FROM settings WHERE key = 'caller_name_format'), 'name') = 'name_org'
-                         AND COALESCE(btrim(org), '') <> '' AND lower(btrim(org)) <> lower(btrim(name))
+                         AND btrim(regexp_replace(COALESCE(org, ''), '[[:cntrl:][:space:]",\\]+', ' ', 'g')) <> ''
+                         AND lower(btrim(org)) <> lower(btrim(name))
                     THEN name || ' (' || org || ')' ELSE name END,
                '[[:cntrl:][:space:]",\\]+', ' ', 'g')) FROM (
         SELECT k.name, k.organization AS org, 0 AS prio, k.id, '' AS ext

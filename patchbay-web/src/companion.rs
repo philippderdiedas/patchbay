@@ -754,11 +754,14 @@ pub struct PastCall {
 pub struct ContactRef {
     id: i32,
     name: String,
+    /// company: shown under the name in the call window
+    organization: Option<String>,
 }
 
 #[derive(Serialize)]
 pub struct ExtRef {
     name: String,
+    organization: Option<String>,
     book: String,
     url: Option<String>,
 }
@@ -817,7 +820,7 @@ pub async fn context(State(app): State<AppState>, u: CurrentUser, Query(q): Quer
     .map_err(anyhow::Error::from)?;
     // same matching as contact_name() : as written or as E.164
     let contact: Option<ContactRef> = sqlx::query_as(
-        "SELECT id, name FROM contacts WHERE (user_id = $1 OR ($3 AND user_id IS NULL AND deleted_at IS NULL)) AND length($2) > 4
+        "SELECT id, name, organization FROM contacts WHERE (user_id = $1 OR ($3 AND user_id IS NULL AND deleted_at IS NULL)) AND length($2) > 4
            AND (phone = $2 OR mobile = $2 OR phone_e164 = caller_e164($2) OR mobile_e164 = caller_e164($2))
          ORDER BY user_id IS NULL, id LIMIT 1",
 )
@@ -833,8 +836,8 @@ pub async fn context(State(app): State<AppState>, u: CurrentUser, Query(q): Quer
         None => (false, vec![]),
     };
     // external phone books: same matching; the book's display name from the configuration
-    let ext: Option<(String, String, Option<String>)> = sqlx::query_as(
-        "SELECT book, name, url FROM external_contacts WHERE length($1) > 4
+    let ext: Option<(String, String, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT book, name, organization, url FROM external_contacts WHERE length($1) > 4
            AND (phone_e164 = caller_e164($1) OR mobile_e164 = caller_e164($1))
          ORDER BY book, res LIMIT 1",
     )
@@ -842,9 +845,10 @@ pub async fn context(State(app): State<AppState>, u: CurrentUser, Query(q): Quer
     .fetch_optional(&app.db)
     .await
     .map_err(anyhow::Error::from)?;
-    let external = ext.map(|(book, name, url)| ExtRef {
+    let external = ext.map(|(book, name, organization, url)| ExtRef {
         book: app.cfg.external_books.iter().find(|b| b.id == book).map(|b| b.name.clone()).unwrap_or(book),
         name,
+        organization,
         url,
     });
     Ok(Json(Context { calls, voicemails, contact, external, e164, blocked, notes, shared_notes: app.cfg.shared_notes }))

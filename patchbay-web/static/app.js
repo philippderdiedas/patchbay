@@ -548,9 +548,13 @@ document.addEventListener("DOMContentLoaded", () => {
       card.append(el("div", { class: "cmp-state" }, el("span", { text: state }), el("span", { class: "cmp-time", text: fmt(c.secs) })));
       // own contact (saved during the call) unless the shown name already has it (group prefix)
       const ctx = ctxCache.get(c.number);
-      const contact = ctx && ctx.contact ? ctx.contact.name : (ctx && ctx.external ? ctx.external.name : "");
+      const hit = ctx && (ctx.contact || ctx.external);
+      const contact = hit ? hit.name : "";
       const name = contact && !(c.name || "").includes(contact) ? contact : c.name;
       card.append(el("div", { class: "cmp-who", text: name || c.number || "?" }));
+      // company of a contact (not for a company's own entry, where it equals the name)
+      const org = hit && hit.organization && hit.organization !== (name || "") ? hit.organization : "";
+      if (org) card.append(el("div", { class: "cmp-org", text: org }));
       const sub = [name ? c.number : "", c.via ? `${t("via")} ${c.via}` : "", c.muted ? t("Muted") : ""].filter(Boolean).join(" · ");
       if (sub) card.append(el("div", { class: "cmp-sub", text: sub }));
       const btns = el("div", { class: "cmp-actions" });

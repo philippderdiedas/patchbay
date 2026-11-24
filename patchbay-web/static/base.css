@@ -324,6 +324,7 @@ html:has(dialog.cmp-book[open]) { overflow: hidden; }
 .cmp-active { border-left-color: var(--accent); }
 .cmp-state { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); }
 .cmp-who { font-weight: 600; margin-top: 2px; word-break: break-word; }
+.cmp-org { font-size: .9em; opacity: .85; word-break: break-word; }
 .cmp-sub { font-size: 13px; color: var(--muted); }
 .cmp-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .cmp-actions button { padding: 4px 10px; font-size: 14px; }

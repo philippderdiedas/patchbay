@@ -13,16 +13,19 @@
       <td>{{ cl.name }}</td><td class="muted">{{ cl.description }}</td>
       <td>{% if cl.default_on %}{{ c.t.s("yes") }}{% endif %}</td>
       <td>{% match cl.kc_group %}{% when Some with (g) %}<code>{{ g }}</code>{% when None %}<span class="muted">–</span>{% endmatch %}</td><td>{{ cl.routes }}</td><td>{{ cl.users }}</td>
-      <td>{% if !cl.builtin && cl.routes == 0 %}
+      <td class="row">
+        <button type="button" data-fill="class-form" data-v-key="{{ cl.key }}" data-v-name="{{ cl.name }}" data-v-description="{{ cl.description }}"
+          data-v-kc_group="{% if let Some(g) = cl.kc_group %}{{ g }}{% endif %}" data-v-default_on="{% if cl.default_on %}1{% endif %}">{{ c.t.s("Edit") }}</button>
+        {% if !cl.builtin && cl.routes == 0 %}
         <form class="inline" method="post" action="/admin/classes/{{ cl.key }}/delete" data-confirm="{{ c.t.s("Really delete?") }}"><button class="danger">{{ c.t.s("Delete") }}</button></form>
-      {% endif %}</td>
+        {% endif %}</td>
     </tr>
     {% endfor %}
   </table></div>
 </div>
-<div class="card">
+<div class="card" id="class-edit">
   <h3>{{ c.t.s("Create or change class") }}</h3>
-  <form method="post" action="/admin/classes" class="row">
+  <form method="post" action="/admin/classes" class="row" id="class-form">
     <input name="key" placeholder="{{ c.t.s("key (a–z, 0–9, _)") }}" required pattern="[a-z][a-z0-9_]{1,30}">
     <input name="name" placeholder="{{ c.t.s("Name") }}" required>
     <input name="description" placeholder="{{ c.t.s("Description") }}">

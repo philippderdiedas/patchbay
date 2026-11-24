@@ -58,6 +58,30 @@ function pbxToast(text, ok) {
       update();
     });
 
+    // "Edit" buttons: data-fill="<form id>" and data-v-<field>="value" fill that form's fields
+    // (checkboxes: checked when the value is not empty), then scroll to it and focus the first field
+    document.addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-fill]");
+      if (!btn) return;
+      const form = document.getElementById(btn.dataset.fill);
+      if (!form) return;
+      for (const [k, v] of Object.entries(btn.dataset)) {
+        if (!k.startsWith("v") || k === "v" || k.length < 2) continue;
+        // dataset turns data-v-kc_group into vKc_group
+        const name = k.charAt(1).toLowerCase() + k.slice(2);
+        const field = form.elements.namedItem(name);
+        if (!field) continue;
+        if (field.type === "checkbox") field.checked = v !== "";
+        else field.value = v;
+      }
+      const card = form.closest(".card") || form;
+      card.scrollIntoView({ behavior: "smooth", block: "start" });
+      card.classList.add("flash");
+      setTimeout(() => card.classList.remove("flash"), 1200);
+      const first = form.querySelector("input:not([type=hidden]), select, textarea");
+      if (first) first.focus({ preventScroll: true });
+    });
+
     // Show parts of a form depending on a select: data-show-when="field=value" or
     // "field!=a,b" (shown unless the value is one of a, b)
     document.querySelectorAll("[data-show-when]").forEach((el) => {

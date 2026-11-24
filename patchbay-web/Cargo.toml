@@ -16,7 +16,7 @@ hex = "0.4"
 md-5 = "0.10"
 openidconnect = { version = "4", features = ["reqwest", "rustls-tls"], default-features = false }
 qrcode = "0.14"
-minijinja = "2"
+minijinja = { version = "2", features = ["json", "urlencode"] }
 aes-gcm = "0.10"
 cookie = { version = "0.18", features = ["private", "key-expansion"] }
 lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1"] }
@@ -39,3 +39,4 @@ argon2 = { version = "0.5", features = ["std"] }
 rhai = { version = "1.19", features = ["serde", "sync"] }
 patchbay-notify = { path = "../patchbay-notify" }
 quick-xml = "0.38"
+toml = "0.8"

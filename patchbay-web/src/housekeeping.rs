@@ -31,6 +31,10 @@ pub fn spawn(app: AppState) {
 }
 
 async fn retention(app: &AppState) -> Result<()> {
+    // webhook deliveries: sent ones after 30 days, failed ones after 90 (they show what went wrong)
+    sqlx::query("DELETE FROM webhook_deliveries WHERE (status = 'sent' AND created_at < now() - interval '30 days') OR created_at < now() - interval '90 days'")
+        .execute(&app.db)
+        .await?;
     // bin of the shared phone book
     let n = sqlx::query("DELETE FROM contacts WHERE user_id IS NULL AND deleted_at < now() - make_interval(days => $1)")
         .bind(crate::contacts::BIN_DAYS)

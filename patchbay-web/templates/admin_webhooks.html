@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}{{ c.t.s("Webhooks") }}{% endblock %}
+{% block content %}
+{% include "admin_nav.html" %}
+<div class="card">
+  <h2>{{ c.t.s("Webhooks") }}</h2>
+  <p class="muted">{{ c.t.s("HTTP requests to other systems on events, defined as files in") }} <code>{{ dir }}</code> {{ c.t.s("(read at start, see docs/webhooks.md). Changes take effect after a restart of patchbay-web.") }}</p>
+  {% for e in errors %}<p class="warn">{{ e }}</p>{% endfor %}
+  {% if hooks.is_empty() %}<p class="muted">{{ c.t.s("No webhooks defined.") }}</p>{% else %}
+  <div class="tablewrap"><table class="stacked">
+    <tr><th>{{ c.t.s("Name") }}</th><th>{{ c.t.s("File") }}</th><th>{{ c.t.s("Events") }}</th><th>{{ c.t.s("Condition") }}</th><th>{{ c.t.s("Request") }}</th></tr>
+    {% for h in hooks %}
+    <tr><td data-label="{{ c.t.s("Name") }}">{{ h.name }}{% if !h.enabled %} <span class="muted">({{ c.t.s("off") }})</span>{% endif %}</td>
+      <td data-label="{{ c.t.s("File") }}"><code>{{ h.file }}</code></td>
+      <td data-label="{{ c.t.s("Events") }}">{{ h.events.join(", ") }}</td>
+      <td data-label="{{ c.t.s("Condition") }}"><code>{% if let Some(w) = h.when %}{{ w }}{% else %}–{% endif %}</code></td>
+      <td data-label="{{ c.t.s("Request") }}"><code>{{ h.method }} {{ h.url }}</code></td></tr>
+    {% endfor %}
+  </table></div>
+  <h3>{{ c.t.s("Test") }}</h3>
+  <form method="post" action="/admin/webhooks/test" class="row">
+    <select name="hook" aria-label="{{ c.t.s("Name") }}">{% for h in hooks %}<option>{{ h.name }}</option>{% endfor %}</select>
+    <select name="event" aria-label="{{ c.t.s("Events") }}">{% for e in events %}<option>{{ e }}</option>{% endfor %}</select>
+    <button>{{ c.t.s("Render without sending") }}</button>
+  </form>
+  {% endif %}
+  {% if let Some(t) = test %}
+  <div class="card-sub">
+    <p><b>{{ t.hook }}</b> · {{ t.event }} · {{ c.t.s(t.source) }} ·
+      {% match t.wanted %}{% when Ok with (w) %}{% if w.to_owned() %}{{ c.t.s("condition met") }}{% else %}{{ c.t.s("condition not met: would not be sent") }}{% endif %}{% when Err with (e) %}<span class="warn">{{ e }}</span>{% endmatch %}</p>
+    {% match t.rendered %}
+    {% when Ok with (r) %}<pre class="pre">{{ r.method }} {{ r.url }}
+{% for (k, v) in r.headers %}{{ k }}: {{ v }}
+{% endfor %}
+{% if let Some(b) = r.body %}{{ b }}{% endif %}</pre>
+    {% when Err with (e) %}<p class="warn">{{ e }}</p>
+    {% endmatch %}
+    <details><summary>{{ c.t.s("Template data") }}</summary><pre class="pre">{{ t.payload }}</pre></details>
+  </div>
+  {% endif %}
+</div>
+<div class="card">
+  <h2>{{ c.t.s("Deliveries (last 200)") }}</h2>
+  {% if deliveries.is_empty() %}<p class="muted">{{ c.t.s("None yet.") }}</p>{% else %}
+  <div class="tablewrap"><table class="stacked">
+    <tr><th>{{ c.t.s("Time") }}</th><th>{{ c.t.s("Name") }}</th><th>{{ c.t.s("Event") }}</th><th>{{ c.t.s("Status") }}</th><th>{{ c.t.s("Answer") }}</th><th></th></tr>
+    {% for d in deliveries %}
+    <tr><td data-label="{{ c.t.s("Time") }}">{{ d.created }}</td><td data-label="{{ c.t.s("Name") }}">{{ d.hook }}</td><td data-label="{{ c.t.s("Event") }}">{{ d.event }}</td>
+      <td data-label="{{ c.t.s("Status") }}">{% if d.status == "failed" %}<span class="warn">{{ c.t.s("failed") }}</span>{% else if d.status == "sent" %}{{ c.t.s("sent") }}{% else %}{{ c.t.s("pending") }}{% if !d.next.is_empty() %} <small class="muted">{{ d.next }}</small>{% endif %}{% endif %} <small class="muted">({{ d.attempts }}×)</small></td>
+      <td data-label="{{ c.t.s("Answer") }}"><small>{% if let Some(s) = d.last_status %}HTTP {{ s }} {% endif %}{% if let Some(e) = d.last_error %}<span class="muted">{{ e }}</span>{% endif %}</small></td>
+      <td>{% if d.status == "failed" %}<form class="inline" method="post" action="/admin/webhooks/{{ d.id }}/retry"><button>{{ c.t.s("Send again") }}</button></form>{% endif %}</td></tr>
+    {% endfor %}
+  </table></div>{% endif %}
+</div>
+{% endblock %}

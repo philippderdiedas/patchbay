@@ -204,6 +204,8 @@ pub fn res_name(h: &str) -> String {
 /// A card as stored: the fields Patchbay uses plus the link (vCard URL) and the card itself
 #[derive(Debug, PartialEq)]
 pub struct ExtCard {
+    /// X- properties: X-DOLIBARR-EXTRA-EXT-CRM-ID:296 → "dolibarr_extra_ext_crm_id": "296"
+    pub extra: serde_json::Map<String, serde_json::Value>,
     pub name: String,
     pub organization: Option<String>,
     pub phone: Option<String>,
@@ -214,12 +216,22 @@ pub struct ExtCard {
 
 pub fn card_fields(vcard: &str) -> Option<ExtCard> {
     let f = crate::carddav::parse_vcard(vcard)?;
-    let url = crate::carddav::unfold(vcard).iter().find_map(|l| {
+    let lines = crate::carddav::unfold(vcard);
+    let url = lines.iter().find_map(|l| {
         let (name, _, value) = crate::carddav::split_line(l)?;
         let v = crate::carddav::unesc(value);
         (name == "URL" && (v.starts_with("https://") || v.starts_with("http://"))).then(|| v.chars().take(500).collect())
     });
-    Some(ExtCard { name: f.name, organization: f.organization, phone: f.phone, mobile: f.mobile, email: f.email, url })
+    let mut extra = serde_json::Map::new();
+    for l in &lines {
+        let Some((name, _, value)) = crate::carddav::split_line(l) else { continue };
+        let Some(key) = name.strip_prefix("X-") else { continue };
+        let key: String = key.to_lowercase().chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect();
+        if !key.is_empty() && extra.len() < 100 && !extra.contains_key(&key) {
+            extra.insert(key, serde_json::Value::String(crate::carddav::unesc(value).chars().take(500).collect()));
+        }
+    }
+    Some(ExtCard { extra, name: f.name, organization: f.organization, phone: f.phone, mobile: f.mobile, email: f.email, url })
 }
 
 fn client() -> Result<reqwest::Client> {
@@ -319,11 +331,11 @@ pub async fn sync(app: &AppState, b: &ExtBook) -> Result<Option<usize>> {
         let (phone, phone_e164) = crate::carddav::store_number(&f.phone);
         let (mobile, mobile_e164) = crate::carddav::store_number(&f.mobile);
         sqlx::query(
-            "INSERT INTO external_contacts (book, res, etag, name, organization, phone, phone_e164, mobile, mobile_e164, email, url, vcard)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            "INSERT INTO external_contacts (book, res, etag, name, organization, phone, phone_e164, mobile, mobile_e164, email, url, vcard, extra)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
              ON CONFLICT (book, res) DO UPDATE SET etag = EXCLUDED.etag, name = EXCLUDED.name, organization = EXCLUDED.organization,
                phone = EXCLUDED.phone, phone_e164 = EXCLUDED.phone_e164, mobile = EXCLUDED.mobile, mobile_e164 = EXCLUDED.mobile_e164,
-               email = EXCLUDED.email, url = EXCLUDED.url, vcard = EXCLUDED.vcard",
+               email = EXCLUDED.email, url = EXCLUDED.url, vcard = EXCLUDED.vcard, extra = EXCLUDED.extra",
         )
         .bind(&b.id)
         .bind(res)
@@ -337,6 +349,7 @@ pub async fn sync(app: &AppState, b: &ExtBook) -> Result<Option<usize>> {
         .bind(&f.email)
         .bind(&f.url)
         .bind(vcard)
+        .bind(serde_json::Value::Object(f.extra.clone()))
         .execute(&mut *tx)
         .await?;
     }
@@ -479,6 +492,9 @@ END:VCARD]]></address-data></prop></propstat></response>
         assert_eq!(f.phone.as_deref(), Some("040 123456"));
         assert_eq!(f.mobile.as_deref(), Some("0176 1"));
         assert_eq!(f.url.as_deref(), Some("https://erp.example/societe/card.php?socid=1"));
+        let x = card_fields(&v.replace("END:VCARD", "X-DOLIBARR-EXTRA-EXT-CRM-ID:296\r\nX-ABShowAs:COMPANY\r\nEND:VCARD")).unwrap().extra;
+        assert_eq!(x.get("dolibarr_extra_ext_crm_id").and_then(|v| v.as_str()), Some("296"));
+        assert_eq!(x.get("abshowas").and_then(|v| v.as_str()), Some("COMPANY"));
         // no javascript: or other schemes as links
         assert_eq!(card_fields(&v.replace("https://erp.example", "javascript:alert(1)//")).unwrap().url, None);
     }

@@ -516,8 +516,9 @@ pub fn spawn(app: AppState) {
 /// Writes finished call flows (best effort, in the background: the event loop never waits on the DB).
 fn store_flows(app: &AppState, flows: Vec<Flow>) {
     for f in flows {
-        let db = app.db.clone();
+        let app = app.clone();
         tokio::spawn(async move {
+            let db = &app.db;
             let r = sqlx::query(
                 "INSERT INTO call_flows (linkedid, started_at, duration_s, talk_s, flow)
                  VALUES ($1, to_timestamp($2), $3, $4, $5) ON CONFLICT (linkedid) DO NOTHING",
@@ -527,10 +528,13 @@ fn store_flows(app: &AppState, flows: Vec<Flow>) {
             .bind(f.duration_s.min(i32::MAX as u64) as i32)
             .bind(f.talk_s.map(|t| t.min(i32::MAX as u64) as i32))
             .bind(serde_json::to_value(&f).unwrap_or_default())
-            .execute(&db)
+            .execute(db)
             .await;
-            if let Err(e) = r {
-                tracing::warn!("call flow {}: {e:#}", f.linkedid);
+            match r {
+                // webhooks (call.ended) only for a newly stored flow (not again after a reconnect)
+                Ok(done) if done.rows_affected() == 1 => crate::webhooks::on_call(&app, &f).await,
+                Ok(_) => {}
+                Err(e) => tracing::warn!("call flow {}: {e:#}", f.linkedid),
             }
         });
     }

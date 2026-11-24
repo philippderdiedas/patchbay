@@ -136,6 +136,10 @@ pub(crate) async fn save(app: &AppState, u: &CurrentUser, uid: i32, id: Option<i
     };
     let action = if id.is_none() { "note.create" } else { "note.update" };
     db::audit(&app.db, &u.session.sub, action, &format!("note:{nid}"), serde_json::json!({"number": e164, "shared": shared})).await?;
+    // webhooks: the flag as stored (with shared notes off an existing flag stays, but counts as off)
+    let stored_shared: bool = sqlx::query_scalar("SELECT shared FROM call_notes WHERE id = $1").bind(nid).fetch_one(&app.db).await.unwrap_or(false);
+    let event = if id.is_none() { "note.created" } else { "note.updated" };
+    crate::webhooks::on_note(app, event, nid, &e164, &body, stored_shared, uid).await;
     Ok(())
 }
 
@@ -154,15 +158,21 @@ pub async fn update(State(app): State<AppState>, u: CurrentUser, Path(id): Path<
 /// POST /me/live/notes/{id}/delete: own notes only
 pub async fn delete(State(app): State<AppState>, u: CurrentUser, Path(id): Path<i32>) -> Result<Json<Reply>, AppError> {
     let uid = uid(&u)?;
-    let e164: Option<String> = sqlx::query_scalar("DELETE FROM call_notes WHERE id = $1 AND user_id = $2 RETURNING e164")
+    reply(delete_own(&app, &u, uid, id).await)
+}
+
+/// Deletes an own note (call window, contact page): audit log and webhooks (note.deleted).
+pub async fn delete_own(app: &AppState, u: &CurrentUser, uid: i32, id: i32) -> Result<(), AppError> {
+    let row: Option<(String, String, bool)> = sqlx::query_as("DELETE FROM call_notes WHERE id = $1 AND user_id = $2 RETURNING e164, body, shared")
         .bind(id)
         .bind(uid)
         .fetch_optional(&app.db)
         .await
         .map_err(anyhow::Error::from)?;
-    let Some(e164) = e164 else { return Err(AppError::NotFound) };
+    let Some((e164, body, shared)) = row else { return Err(AppError::NotFound) };
     db::audit(&app.db, &u.session.sub, "note.delete", &format!("note:{id}"), serde_json::json!({"number": e164})).await?;
-    reply(Ok(()))
+    crate::webhooks::on_note(app, "note.deleted", id, &e164, &body, shared, uid).await;
+    Ok(())
 }
 
 #[cfg(test)]

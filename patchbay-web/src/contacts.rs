@@ -272,14 +272,7 @@ pub async fn contact_note_create(State(app): State<AppState>, u: CurrentUser, Pa
 /// POST /contacts/{id}/notes/{note}/delete: own notes only.
 pub async fn contact_note_delete(State(app): State<AppState>, u: CurrentUser, Path((id, note)): Path<(i32, i32)>) -> Result<Response, AppError> {
     let uid = crate::companion::uid(&u)?;
-    let e164: Option<String> = sqlx::query_scalar("DELETE FROM call_notes WHERE id = $1 AND user_id = $2 RETURNING e164")
-        .bind(note)
-        .bind(uid)
-        .fetch_optional(&app.db)
-        .await
-        .map_err(anyhow::Error::from)?;
-    let Some(e164) = e164 else { return Err(AppError::NotFound) };
-    crate::db::audit(&app.db, &u.session.sub, "note.delete", &format!("note:{note}"), serde_json::json!({"number": e164})).await?;
+    crate::notes::delete_own(&app, &u, uid, note).await?;
     Ok(Redirect::to(&format!("/contacts/{id}#notes")).into_response())
 }
 

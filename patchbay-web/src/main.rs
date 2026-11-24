@@ -20,6 +20,7 @@ mod custom;
 mod db;
 mod dupes;
 mod events;
+mod webhooks;
 mod extbooks;
 mod pages;
 mod provision;
@@ -77,6 +78,8 @@ pub struct AppState {
     pub bot: bot::BotState,
     /// call companion widget: "via" per call from call tracking, muted channels, channel cache
     pub live: companion::Live,
+    /// webhook definitions (/config/webhooks.d), read at startup
+    pub webhooks: webhooks::Shared,
 }
 
 impl AppState {
@@ -233,6 +236,7 @@ async fn main() -> Result<()> {
         events: events::Events::new(),
         bot: bot::BotState::default(),
         live: companion::Live::default(),
+        webhooks: std::sync::Arc::new(webhooks::load(std::path::Path::new(&webhooks::dir()))),
     };
 
     // Site values the dialplan reads from the settings table (source of truth is the environment)
@@ -272,6 +276,9 @@ async fn main() -> Result<()> {
     voicemail::spawn_sweep(state.clone());
     // retention of call records and audit log, Asterisk log rotation
     housekeeping::spawn(state.clone());
+    // webhooks: delivery loop and voicemail events from the event bus
+    webhooks::spawn(state.clone());
+    webhooks::spawn_bus(state.clone());
     // external phone books (PBX_EXTERNAL_BOOKS): periodic CardDAV loads
     extbooks::spawn(state.clone()).await.context("external phone books")?;
     {
@@ -474,6 +481,9 @@ async fn main() -> Result<()> {
         .route("/admin/blocklist/{id}/delete", post(blocklist::delete))
         .route("/admin/status", get(admin::status))
         .route("/admin/log", get(admin::log))
+        .route("/admin/webhooks", get(webhooks::admin_page))
+        .route("/admin/webhooks/test", post(webhooks::admin_test))
+        .route("/admin/webhooks/{id}/retry", post(webhooks::admin_retry))
         .route("/admin/log/calls.csv", get(admin::log_calls_csv))
         .route("/admin/users/{id}/devices", post(pages::admin_device_create))
         .route("/admin/users/{uid}/devices/{did}", post(pages::admin_device_action))

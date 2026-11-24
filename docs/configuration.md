@@ -394,7 +394,8 @@ can stay as fallback or be removed.
 Per trunk (trunk page, "Caller ID of incoming calls"): **take over the caller name** and **take over the
 caller number** the peer sends, both on by default. Without the name, phones show the name from the own
 contacts or only the number. Without the number the call shows as the trunk (its name), with no number:
-no calling back, blocklist or notes for these calls. Use it for peers whose caller IDs are not reliable
+no calling back, personal blocking or notes for these calls; the admin blocklist still checks the
+number that came in (before the switches apply). Use it for peers whose caller IDs are not reliable
 (spoofed or meaningless numbers, names you do not want on the phones).
 
 ### Devices with a fixed address

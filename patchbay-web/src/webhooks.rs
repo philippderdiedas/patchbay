@@ -34,6 +34,9 @@ use serde_json::json;
 
 use crate::AppState;
 
+/// Seconds after a call before call.ended is queued (notes written after hanging up are included)
+const NOTES_WAIT_S: u64 = 120;
+
 pub const EVENTS: [&str; 5] = ["call.ended", "note.created", "note.updated", "note.deleted", "voicemail.new"];
 const SECRETS_DIR: &str = "/run/patchbay-web";
 
@@ -97,7 +100,10 @@ impl Hooks {
     }
 }
 
-fn env<'a>(dry_run: bool) -> Environment<'a> {
+/// Secret values read while rendering (masked in stored errors and answers)
+type SecretSink = Arc<std::sync::Mutex<Vec<String>>>;
+
+fn env<'a>(dry_run: bool, sink: Option<SecretSink>) -> Environment<'a> {
     let mut env = Environment::new();
     // missing values (no contact, no DID, …) render empty instead of failing the request
     env.set_undefined_behavior(UndefinedBehavior::Chainable);
@@ -109,11 +115,26 @@ fn env<'a>(dry_run: bool) -> Environment<'a> {
         if !ok {
             return Err(minijinja::Error::new(minijinja::ErrorKind::InvalidOperation, format!("secret('{name}'): letters, digits, . _ - only")));
         }
-        std::fs::read_to_string(format!("{SECRETS_DIR}/{name}"))
+        let v = std::fs::read_to_string(format!("{SECRETS_DIR}/{name}"))
             .map(|s| s.trim().to_string())
-            .map_err(|_| minijinja::Error::new(minijinja::ErrorKind::InvalidOperation, format!("secret('{name}'): {SECRETS_DIR}/{name} not readable")))
+            .map_err(|_| minijinja::Error::new(minijinja::ErrorKind::InvalidOperation, format!("secret('{name}'): {SECRETS_DIR}/{name} not readable")))?;
+        if let Some(sink) = &sink {
+            if let Ok(mut l) = sink.lock() {
+                l.push(v.clone());
+            }
+        }
+        Ok(v)
     });
     env
+}
+
+/// Replaces secret values (at least 4 characters) in a text with ***
+fn mask(text: &str, secrets: &[String]) -> String {
+    let mut t = text.to_string();
+    for s in secrets.iter().filter(|s| s.len() >= 4) {
+        t = t.replace(s.as_str(), "***");
+    }
+    t
 }
 
 /// Checks a hook's templates and expression (syntax only).
@@ -132,9 +153,12 @@ fn check(h: &Hook) -> Result<()> {
     if !matches!(h.method.as_str(), "GET" | "POST" | "PUT" | "PATCH" | "DELETE") {
         bail!("{}: method {:?}", h.name, h.method);
     }
-    let env = env(true);
+    let env = env(true, None);
     if let Some(w) = &h.when {
         env.compile_expression(w).with_context(|| format!("{}: when", h.name))?;
+    }
+    for k in h.headers.keys() {
+        reqwest::header::HeaderName::from_bytes(k.as_bytes()).map_err(|_| anyhow::anyhow!("{}: header name {k:?}", h.name))?;
     }
     env.template_from_str(&h.url).with_context(|| format!("{}: url", h.name))?;
     for (k, v) in &h.headers {
@@ -197,23 +221,27 @@ fn wants(h: &Hook, event: &str, payload: &serde_json::Value) -> Result<bool> {
     match &h.when {
         None => Ok(true),
         Some(w) => {
-            let env = env(true);
+            let env = env(true, None);
             let expr = env.compile_expression(w)?;
             Ok(expr.eval(Value::from_serialize(payload))?.is_true())
         }
     }
 }
 
+/// The notes of a call a hook gets: shared ones; with private_notes also the person's own
+/// (never private notes of colleagues who were not on the call)
+fn filter_notes(h: &Hook, p: &mut serde_json::Value) {
+    let uid = p.pointer("/user/id").cloned();
+    if let Some(serde_json::Value::Array(notes)) = p.get_mut("notes") {
+        notes.retain(|n| n.get("shared") == Some(&json!(true)) || (h.private_notes && uid.is_some() && n.get("author_id") == uid.as_ref()));
+    }
+}
+
 /// Queues an event for every hook that wants it.
 pub async fn enqueue(app: &AppState, event: &str, payload: serde_json::Value) {
     for h in &app.webhooks.hooks {
-        // notes of a call: only shared ones unless the hook asks for private ones
         let mut p = payload.clone();
-        if !h.private_notes {
-            if let Some(serde_json::Value::Array(notes)) = p.get_mut("notes") {
-                notes.retain(|n| n.get("shared") == Some(&json!(true)));
-            }
-        }
+        filter_notes(h, &mut p);
         match wants(h, event, &p) {
             Ok(false) => continue,
             Err(e) => {
@@ -236,21 +264,26 @@ pub struct Rendered {
     pub url: String,
     pub headers: Vec<(String, String)>,
     pub body: Option<String>,
+    /// secret values used (for masking errors and answers)
+    pub secrets: Vec<String>,
 }
 
 pub fn render(h: &Hook, payload: &serde_json::Value, dry_run: bool) -> Result<Rendered> {
-    let env = env(dry_run);
+    let sink: SecretSink = Arc::default();
+    let env = env(dry_run, Some(sink.clone()));
     let ctx = Value::from_serialize(payload);
+    let secrets = || sink.lock().map(|l| l.clone()).unwrap_or_default();
     let r = |name: &str, t: &str| -> Result<String> { env.render_str(t, &ctx).with_context(|| format!("{}: {name}", h.name)) };
     let url = r("url", &h.url)?.trim().to_string();
     if !(url.starts_with("https://") || url.starts_with("http://")) {
-        bail!("{}: url renders to {:?}, not an http(s) URL", h.name, url.chars().take(80).collect::<String>());
+        let shown: String = mask(&url, &secrets()).chars().take(80).collect();
+        bail!("{}: url renders to {shown:?}, not an http(s) URL", h.name);
     }
     let mut headers = vec![];
     for (k, v) in &h.headers {
         let v = r(&format!("header {k}"), v)?;
-        if v.contains('\r') || v.contains('\n') {
-            bail!("{}: header {k} contains a line break", h.name);
+        if v.contains('\r') || v.contains('\n') || reqwest::header::HeaderValue::from_str(&v).is_err() {
+            bail!("{}: header {k} contains a line break or control character", h.name);
         }
         headers.push((k.clone(), v));
     }
@@ -258,7 +291,7 @@ pub fn render(h: &Hook, payload: &serde_json::Value, dry_run: bool) -> Result<Re
         Some(b) => Some(r("body", b)?),
         None => None,
     };
-    Ok(Rendered { method: h.method.clone(), url, headers, body })
+    Ok(Rendered { method: h.method.clone(), url, headers, body, secrets: secrets() })
 }
 
 async fn send(http: &reqwest::Client, h: &Hook, req: &Rendered) -> Result<(u16, String)> {
@@ -271,7 +304,16 @@ async fn send(http: &reqwest::Client, h: &Hook, req: &Rendered) -> Result<(u16, 
     }
     let r = b.send().await.map_err(|e| anyhow::anyhow!("{}", e.without_url()))?;
     let status = r.status().as_u16();
-    let text: String = r.text().await.unwrap_or_default().chars().take(500).collect();
+    // only the start of the answer (stored for the admin page)
+    let mut r = r;
+    let mut buf: Vec<u8> = vec![];
+    while buf.len() < 2048 {
+        match r.chunk().await {
+            Ok(Some(c)) => buf.extend_from_slice(&c),
+            _ => break,
+        }
+    }
+    let text: String = String::from_utf8_lossy(&buf).chars().take(500).collect();
     Ok((status, text))
 }
 
@@ -283,8 +325,6 @@ fn backoff(attempts: i32) -> i64 {
 /// Delivery loop: every few seconds the due deliveries are rendered and sent.
 pub fn spawn(app: AppState) {
     tokio::spawn(async move {
-        // deliveries interrupted by a restart are retried
-        let _ = sqlx::query("UPDATE webhook_deliveries SET status = 'pending' WHERE status = 'sending'").execute(&app.db).await;
         let http = match reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .user_agent(concat!("patchbay/", env!("CARGO_PKG_VERSION")))
@@ -306,41 +346,52 @@ pub fn spawn(app: AppState) {
 }
 
 async fn deliver_due(app: &AppState, http: &reqwest::Client) -> Result<()> {
+    // due ones, and ones a sender took more than 10 minutes ago (restart, crash)
     let due: Vec<(i64, String, serde_json::Value, i32)> = sqlx::query_as(
-        "UPDATE webhook_deliveries SET status = 'sending', attempts = attempts + 1
-         WHERE id IN (SELECT id FROM webhook_deliveries WHERE status = 'pending' AND next_at <= now() ORDER BY id LIMIT 20 FOR UPDATE SKIP LOCKED)
+        "UPDATE webhook_deliveries SET status = 'sending', attempts = attempts + 1, claimed_at = now()
+         WHERE id IN (SELECT id FROM webhook_deliveries
+                      WHERE (status = 'pending' AND next_at <= now()) OR (status = 'sending' AND claimed_at < now() - interval '10 minutes')
+                      ORDER BY id LIMIT 20 FOR UPDATE SKIP LOCKED)
          RETURNING id, hook, payload, attempts",
     )
     .fetch_all(&app.db)
     .await?;
+    // in parallel: a slow target does not hold up the others
+    let mut set = tokio::task::JoinSet::new();
     for (id, hook, payload, attempts) in due {
-        let Some(h) = app.webhooks.get(&hook) else {
-            finish(app, id, "failed", None, "hook no longer configured", None).await?;
-            continue;
-        };
-        let req = match render(h, &payload, false) {
-            Ok(r) => r,
-            Err(e) => {
-                // a template error does not go away by retrying
-                finish(app, id, "failed", None, &format!("{e:#}"), None).await?;
-                continue;
+        let (app, http) = (app.clone(), http.clone());
+        set.spawn(async move {
+            if let Err(e) = deliver_one(&app, &http, id, &hook, &payload, attempts).await {
+                tracing::warn!("webhook delivery {id}: {e:#}");
             }
-        };
-        match send(http, h, &req).await {
-            Ok((code, _)) if (200..300).contains(&code) => finish(app, id, "sent", Some(code), "", None).await?,
-            Ok((code, text)) => {
-                let retry = attempts < h.max_attempts && (code == 429 || code >= 500 || code == 408);
-                let next = retry.then(|| backoff(attempts));
-                finish(app, id, if retry { "pending" } else { "failed" }, Some(code), &text, next).await?;
-            }
-            Err(e) => {
-                let retry = attempts < h.max_attempts;
-                let next = retry.then(|| backoff(attempts));
-                finish(app, id, if retry { "pending" } else { "failed" }, None, &format!("{e:#}"), next).await?;
-            }
+        });
+    }
+    while set.join_next().await.is_some() {}
+    Ok(())
+}
+
+async fn deliver_one(app: &AppState, http: &reqwest::Client, id: i64, hook: &str, payload: &serde_json::Value, attempts: i32) -> Result<()> {
+    let Some(h) = app.webhooks.get(hook).filter(|h| h.enabled) else {
+        return finish(app, id, "failed", None, "hook no longer configured or switched off", None).await;
+    };
+    let req = match render(h, payload, false) {
+        Ok(r) => r,
+        // a template error does not go away by retrying
+        Err(e) => return finish(app, id, "failed", None, &format!("{e:#}"), None).await,
+    };
+    match send(http, h, &req).await {
+        Ok((code, _)) if (200..300).contains(&code) => finish(app, id, "sent", Some(code), "", None).await,
+        Ok((code, text)) => {
+            let retry = attempts < h.max_attempts && (code == 429 || code >= 500 || code == 408);
+            let next = retry.then(|| backoff(attempts - 1));
+            finish(app, id, if retry { "pending" } else { "failed" }, Some(code), &mask(&text, &req.secrets), next).await
+        }
+        Err(e) => {
+            let retry = attempts < h.max_attempts;
+            let next = retry.then(|| backoff(attempts - 1));
+            finish(app, id, if retry { "pending" } else { "failed" }, None, &mask(&format!("{e:#}"), &req.secrets), next).await
         }
     }
-    Ok(())
 }
 
 async fn finish(app: &AppState, id: i64, status: &str, code: Option<u16>, error: &str, next_in_s: Option<i64>) -> Result<()> {
@@ -369,7 +420,7 @@ async fn finish(app: &AppState, id: i64, status: &str, code: Option<u16>, error:
 async fn person(app: &AppState, uid: i32) -> Option<serde_json::Value> {
     let r: Option<(i16, String, Option<String>)> =
         sqlx::query_as("SELECT extension, display_name, email FROM users WHERE id = $1").bind(uid).fetch_optional(&app.db).await.ok()?;
-    r.map(|(ext, name, email)| json!({"ext": ext.to_string(), "name": name, "email": email}))
+    r.map(|(ext, name, email)| json!({"id": uid, "ext": ext.to_string(), "name": name, "email": email}))
 }
 
 /// The contact for a number: the person's own contacts, the shared phone book, then the external
@@ -423,6 +474,9 @@ pub async fn on_call(app: &AppState, f: &crate::calltrack::Flow) {
     if app.webhooks.hooks.is_empty() {
         return;
     }
+    // notes are mostly written right after hanging up: wait, then collect them (a restart in
+    // between loses this call's event)
+    tokio::time::sleep(Duration::from_secs(NOTES_WAIT_S)).await;
     let payload = match call_payload(app, f).await {
         Ok(p) => p,
         Err(e) => {
@@ -448,8 +502,21 @@ async fn call_payload(app: &AppState, f: &crate::calltrack::Flow) -> Result<serd
     };
     let trunks: HashMap<String, String> = sqlx::query_as::<_, (String, String)>("SELECT asterisk_ref, name FROM trunks").fetch_all(&app.db).await?.into_iter().collect();
     let trunk_of = |ep: &str| trunks.get(ep.strip_prefix("IAX2/").unwrap_or(ep)).cloned();
-    let origin_dev = dev(&f.origin.ep).await;
-    let trunk_leg = f.dials.iter().find(|d| d.is_trunk() && trunk_of(&d.ep).is_some());
+    // click-to-call starts on a Local channel: the person's own device is the first device leg
+    let origin_dev = match dev(&f.origin.ep).await {
+        Some(d) => Some(d),
+        None if !f.origin.c2c.is_empty() => match f.dials.iter().find(|d| !d.is_trunk()) {
+            Some(d) => dev(&d.ep).await,
+            None => None,
+        },
+        None => None,
+    };
+    // the trunk that carried the call (after a failover the answered one, not the first attempt)
+    let trunk_leg = f
+        .dials
+        .iter()
+        .find(|d| d.is_trunk() && d.status == "ANSWER" && trunk_of(&d.ep).is_some())
+        .or_else(|| f.dials.iter().find(|d| d.is_trunk() && trunk_of(&d.ep).is_some()));
     let from_trunk = trunk_of(&f.origin.ep).or_else(|| (!f.origin.chan.is_empty()).then(|| trunk_of(&f.origin.chan)).flatten());
     let (direction, remote_raw, trunk) = if let Some(t) = &from_trunk {
         ("in", f.origin.num.clone(), Some(t.clone()))
@@ -491,12 +558,13 @@ async fn call_payload(app: &AppState, f: &crate::calltrack::Flow) -> Result<serd
     let notes: Vec<serde_json::Value> = match &e164 {
         Some(e) => sqlx::query_as::<_, (i32, String, bool, i32, String)>(
             "SELECT n.id, n.body, n.shared AND $4, n.user_id, u.display_name FROM call_notes n JOIN users u ON u.id = n.user_id
-             WHERE n.e164 = $1 AND n.created_at BETWEEN to_timestamp($2) AND to_timestamp($3) + interval '1 minute' ORDER BY n.id",
+             WHERE n.e164 = $1 AND n.created_at BETWEEN to_timestamp($2) AND to_timestamp($3) + make_interval(secs => $5) ORDER BY n.id",
         )
         .bind(e)
         .bind(f.started)
         .bind(ended)
         .bind(app.cfg.shared_notes)
+        .bind(NOTES_WAIT_S as f64)
         .fetch_all(&app.db)
         .await?
         .into_iter()
@@ -693,15 +761,18 @@ pub async fn admin_test(
     if !EVENTS.contains(&f.event.as_str()) {
         return Err(crate::AppError::BadRequest("Unknown event.".into()));
     }
-    let last: Option<serde_json::Value> = sqlx::query_scalar("SELECT payload FROM webhook_deliveries WHERE event = $1 ORDER BY id DESC LIMIT 1")
+    // the last delivery of this hook (its data was filtered for it already), else example data
+    let last: Option<serde_json::Value> = sqlx::query_scalar("SELECT payload FROM webhook_deliveries WHERE hook = $1 AND event = $2 ORDER BY id DESC LIMIT 1")
+        .bind(&h.name)
         .bind(&f.event)
         .fetch_optional(&app.db)
         .await
         .map_err(anyhow::Error::from)?;
-    let (payload, source) = match last {
+    let (mut payload, source) = match last {
         Some(p) => (p, "last delivery"),
         None => (sample(&f.event), "example data"),
     };
+    filter_notes(&h, &mut payload);
     let test = TestResult {
         hook: h.name.clone(),
         event: f.event.clone(),
@@ -815,6 +886,36 @@ body = '''{"subject": "Call {{ 'from' if call.incoming else 'to' }} {{ contact.n
             }
         }
         assert!(n >= 4);
+    }
+
+    #[test]
+    fn notes_filter_and_masking() {
+        let h = |private: bool| Hook { private_notes: private, ..hook("[[webhook]]\nname = \"n\"\nevents = [\"call.ended\"]\nurl = \"https://a\"") };
+        let mut p = sample("call.ended");
+        p["user"]["id"] = json!(1);
+        p["notes"] = json!([
+            {"body": "shared", "shared": true, "author_id": 2},
+            {"body": "mine", "shared": false, "author_id": 1},
+            {"body": "colleague", "shared": false, "author_id": 3}
+        ]);
+        let bodies = |hk: &Hook| {
+            let mut q = p.clone();
+            filter_notes(hk, &mut q);
+            q["notes"].as_array().unwrap().iter().map(|n| n["body"].as_str().unwrap().to_string()).collect::<Vec<_>>()
+        };
+        assert_eq!(bodies(&h(false)), ["shared"]);
+        assert_eq!(bodies(&h(true)), ["shared", "mine"], "never a colleague's private note");
+        assert_eq!(mask("token abc123 echoed", &["abc123".into(), "x".into()]), "token *** echoed");
+        // | int refuses injected text: the request is not built (delivery fails, nothing sent)
+        let hk = hook("[[webhook]]\nname = \"i\"\nevents = [\"call.ended\"]\nurl = \"https://a\"\nbody = '{\"id\": {{ contact.x.v | int }}}'");
+        let mut q = sample("call.ended");
+        q["contact"]["x"]["v"] = json!("1, \"owner_id\": 7");
+        assert!(render(&hk, &q, true).is_err());
+        q["contact"]["x"]["v"] = json!("413");
+        assert_eq!(render(&hk, &q, true).unwrap().body.unwrap(), "{\"id\": 413}");
+        // bad header names are refused when loading
+        let f: HookFile = toml::from_str("[[webhook]]\nname = \"b\"\nevents = [\"call.ended\"]\nurl = \"https://a\"\nheaders = { \"Bad Name\" = \"x\" }").unwrap();
+        assert!(check(&f.webhook[0]).is_err());
     }
 
     #[test]

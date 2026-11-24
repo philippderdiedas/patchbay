@@ -22,22 +22,29 @@ headers = { Authorization = "Bearer {{ secret('crm_token') }}", "Content-Type" =
 body = '''{ "phone": {{ remote.e164 | tojson }}, "seconds": {{ call.talk_s }} }'''
 private_notes = false                # also notes only their author sees (default: shared notes only)
 timeout_s = 15
-max_attempts = 12                    # retries after errors: 30 s, 1 min, 2 min … at most 6 h apart
+max_attempts = 12                    # retries after errors (see "Delivery")
 enabled = true
 ```
 
 **Templates** are [minijinja](https://docs.rs/minijinja) (Jinja syntax: `{{ … }}`, `{% if %}`,
 filters like `tojson`, `urlencode`, `join`, `map(attribute=…)`, `replace`, `default`). Missing values
-render empty, so optional parts work with `{% if contact %}…{% endif %}`; use `| tojson` for every
-value inside JSON (quotes, line breaks).
+render empty, so optional parts work with `{% if contact %}…{% endif %}`.
+
+**Values are data from outside** (caller names, notes, fields of an ERP): never put them into a
+request unquoted. Inside JSON every text value goes through `| tojson`, every number through `| int`
+(`"org_id": {{ contact.x.some_id | int }}`; anything else than a number stops the request: the
+delivery fails and nothing is sent); in a URL every value through
+`| urlencode`, and never build the host from data. Values are never evaluated as templates themselves.
 
 **Secrets**: `{{ secret('name') }}` reads the file `$PBX_DIR/secrets/patchbay-web/<name>` (in the
 container `/run/patchbay-web/<name>`, copied at start). Tokens never go into the hook files.
 
 **Delivery**: every matching event is queued (`webhook_deliveries`) with its data; a background loop
-renders the request from the hook as it is at that time and sends it. 2xx = done. Network errors,
-timeouts, 408, 429 and 5xx are retried until `max_attempts`; other answers (e.g. 400, 401) and
-template errors fail at once. No redirects are followed. **Admin → Webhooks** lists the hooks,
+renders the request from the hook as it is at that time and sends it (several at once, so one slow
+target does not hold up the others). 2xx = done. Network errors, timeouts, 408, 429 and 5xx are
+retried until `max_attempts` (30 s, 1 min, 2 min … at most 6 h apart); other answers (e.g. 400, 401),
+template errors and switched-off hooks fail at once. No redirects are followed. Secret values are
+masked (`***`) in stored errors and answers. **Admin → Webhooks** lists the hooks,
 loading errors and the last 200 deliveries (status, HTTP code, start of the answer, "send again"),
 and renders a hook with the data of the last delivery of an event, or example data, without sending
 it ("test"; secrets shown as `***`). Sent deliveries are kept 30 days, others 90.
@@ -51,8 +58,8 @@ external ones also `book`, `book_name`, `url` and `x`: the card's X- properties,
 `X-DOLIBARR-EXTRA-EXT-CRM-ID` → `contact.x.dolibarr_extra_ext_crm_id`). `contact` is empty when
 nothing matches.
 
-**`call.ended`** – after every call that reached a person, group or voice menu or went out over a
-trunk (recorded call flow):
+**`call.ended`** – two minutes after every call that reached a person, group or voice menu or went
+out over a trunk (recorded call flow; the wait lets notes written right after hanging up come along):
 
 | | |
 |---|---|
@@ -65,9 +72,9 @@ trunk (recorded call flow):
 | `call.duration_s`, `call.talk_s` | seconds (whole call, conversation) |
 | `call.did`, `call.trunk` | own number it came in on (E.164), trunk name |
 | `call.steps` | way through the PBX: `kind` (user/group/ivr), `number`, `state` |
-| `user` | the person: caller (outgoing), who answered or was rung first (incoming): `ext`, `name`, `email` |
+| `user` | the person: caller (outgoing, also click-to-call), who answered or was rung first (incoming): `id`, `ext`, `name`, `email` |
 | `device` | `label`, `number` of the device used |
-| `notes` | call notes on the number written during the call or in the minute after it: `body`, `shared`, `author` |
+| `notes` | call notes on the number written during the call or in the two minutes after it: `body`, `shared`, `author`, `author_id`; shared ones, with `private_notes = true` also the person's own |
 
 **`note.created`, `note.updated`, `note.deleted`** – call notes (call window, contact page): `note`
 (`id`, `body`, `shared`, `at`, `at_local`, `at_epoch`), `user` (the author). Notes only their author
@@ -98,8 +105,8 @@ body = '''
   "start_time": "{{ call.started | replace('T', ' ') | replace('Z', '') }}",
   "end_time": "{{ call.ended | replace('T', ' ') | replace('Z', '') }}",
   "duration": "{{ call.talk_s }}",
-  {% if contact.x.dolibarr_type == "contact" and contact.x.dolibarr_extra_ext_crm_id %}"person_id": {{ contact.x.dolibarr_extra_ext_crm_id }},{% endif %}
-  "org_id": {{ contact.x.dolibarr_soc_extra_ext_crm_id }},
+  {% if contact.x.dolibarr_type == "contact" and contact.x.dolibarr_extra_ext_crm_id %}"person_id": {{ contact.x.dolibarr_extra_ext_crm_id | int }},{% endif %}
+  "org_id": {{ contact.x.dolibarr_soc_extra_ext_crm_id | int }},
   "note": {{ (notes | map(attribute='body') | join('\n\n')) | tojson }}
 }
 '''
@@ -117,7 +124,7 @@ headers = { "x-api-token" = "{{ secret('pipedrive_token') }}", "Content-Type" = 
 body = '''
 {
   "content": {{ ("Telefonnotiz von " ~ user.name ~ ": " ~ note.body) | tojson }},
-  {% if contact.x.dolibarr_type == "contact" and contact.x.dolibarr_extra_ext_crm_id %}"person_id": {{ contact.x.dolibarr_extra_ext_crm_id }}{% else %}"org_id": {{ contact.x.dolibarr_soc_extra_ext_crm_id }}{% endif %}
+  {% if contact.x.dolibarr_type == "contact" and contact.x.dolibarr_extra_ext_crm_id %}"person_id": {{ contact.x.dolibarr_extra_ext_crm_id | int }}{% else %}"org_id": {{ contact.x.dolibarr_soc_extra_ext_crm_id | int }}{% endif %}
 }
 '''
 ```
@@ -137,8 +144,8 @@ body = '''
   "label": {{ ("Anruf " ~ ("von " if call.incoming else "an ") ~ contact.name ~ " (" ~ user.name ~ ")") | tojson }},
   "datep": {{ call.started_epoch }}, "datef": {{ call.ended_epoch }},
   "percentage": 100,
-  "socid": {{ contact.x.dolibarr_socid or contact.x.dolibarr_id }},
-  {% if contact.x.dolibarr_type == "contact" %}"contact_id": {{ contact.x.dolibarr_id }},{% endif %}
+  "socid": {{ (contact.x.dolibarr_socid or contact.x.dolibarr_id) | int }},
+  {% if contact.x.dolibarr_type == "contact" %}"contact_id": {{ contact.x.dolibarr_id | int }},{% endif %}
   "note_private": {{ (notes | map(attribute='body') | join('\n\n')) | tojson }}
 }
 '''
@@ -154,7 +161,7 @@ doli-carddav-bridge cannot.)
 name = "chat-missed"
 events = ["call.ended"]
 when = "call.incoming and not call.answered and not call.voicemail"
-url = "https://chat.example.org/hooks/{{ secret('chat_hook_id') }}"
+url = "https://chat.example.org/hooks/{{ secret('chat_hook_id') | urlencode }}"
 headers = { "Content-Type" = "application/json" }
 body = '''{ "text": {{ ("Verpasst: " ~ (contact.name or remote.number) ~ " auf " ~ (call.did or "?")) | tojson }} }'''
 ```

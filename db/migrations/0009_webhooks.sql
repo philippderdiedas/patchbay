@@ -13,6 +13,8 @@ CREATE TABLE webhook_deliveries (
     next_at timestamp with time zone NOT NULL DEFAULT now(),
     created_at timestamp with time zone NOT NULL DEFAULT now(),
     sent_at timestamp with time zone,
+    -- when a sender took it (status sending); taken again after 10 minutes (crashed sender)
+    claimed_at timestamp with time zone,
     last_status integer,
     -- error or the start of the answer
     last_error text,

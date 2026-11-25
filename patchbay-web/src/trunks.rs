@@ -251,10 +251,16 @@ async fn render_sip(app: &AppState) -> anyhow::Result<(String, Vec<(String, bool
             from_user = from_user.as_deref().map(|u| format!("from_user = {u}\ncontact_user = {u}\n")).unwrap_or_default(),
         );
         if register && let Some(u) = &user {
+            // never give up: Asterisk's default stops after 10 failed attempts (a WAN outage of
+            // ~10 minutes, e.g. a nightly reconnect, left the trunk unregistered until a restart),
+            // and fatal answers (401/407 with auth_rejection_permanent = yes, the default, 404 …)
+            // ended it for good; those and 403 are now retried every 10 minutes (no hammering
+            // with bad credentials), timeouts and temporary errors every minute
             out += &format!(
                 "\n[{name}]\ntype = registration\ntransport = transport-{transport}\n{auth}\
                  server_uri = sip:{hostport}\nclient_uri = sip:{u}@{from_domain}\ncontact_user = {u}\n{proxy_line}\
-                 retry_interval = 60\nforbidden_retry_interval = 600\nexpiration = {expiration}\nline = yes\nendpoint = {name}\n"
+                 retry_interval = 60\nmax_retries = 1000000\nforbidden_retry_interval = 600\nfatal_retry_interval = 600\n\
+                 expiration = {expiration}\nline = yes\nendpoint = {name}\n"
             );
         }
         let mut matches = vec![host.clone()];

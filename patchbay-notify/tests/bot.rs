@@ -475,7 +475,12 @@ async fn voicemail_buttons_apply_to_the_mailbox() {
     let s = setup(LinkMode::Auto);
     let r = s.bot.handle(click("mm-grace", Action::VmHeard { id: 7, l: false })).await;
     assert_eq!(*s.pbx.vm_ops.lock().unwrap(), vec![(4, 7, VmOp::Heard)]);
-    let u = r.update.unwrap();
+    // the clicked (untracked) post is edited through the API, not replaced by the click's
+    // response (Mattermost drops the audio file of a post replaced that way)
+    assert!(r.update.is_none(), "{r:?}");
+    let sent = s.chat.take();
+    let [Sent::Edit(m, u)] = &sent[..] else { panic!("{sent:?}") };
+    assert_eq!(m.id, "p9");
     assert!(u.text.contains("heard by Grace"), "{}", u.text);
     assert!(!u.buttons().any(|b| matches!(b.action, Action::VmHeard { .. })));
     // no access → nothing happens

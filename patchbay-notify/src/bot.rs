@@ -784,25 +784,27 @@ impl Bot {
             }
             Action::VmHeard { id, l } | Action::VmDelete { id, l } => {
                 let op = if matches!(action, Action::VmHeard { .. }) { VmOp::Heard } else { VmOp::Delete };
-                // a tracked post of a deleted voicemail is deleted by the change event; editing it
-                // here as well would race with that
+                // The clicked post is never replaced through the click's response: Mattermost then
+                // shows it without its audio file. A tracked post is edited (or deleted) by the
+                // change event; an older, untracked one is edited here through the API, which
+                // keeps the file.
                 let message = match &inb.kind {
                     InboundKind::Action { message, .. } => message.clone(),
                     _ => None,
                 };
-                let can_delete = self.platform(inb.platform).is_some_and(|p| p.capabilities().delete);
-                let tracked = match &message {
-                    Some(m) if op == VmOp::Delete && !l && can_delete => {
-                        self.store.vm_posts(id).await?.iter().any(|(pl, r)| pl == inb.platform && r.id == m.id)
-                    }
+                let platform = self.platform(inb.platform).cloned();
+                let tracked = match (&message, l) {
+                    (Some(m), false) => self.store.vm_posts(id).await?.iter().any(|(pl, r)| pl == inb.platform && r.id == m.id),
                     _ => false,
                 };
                 if !self.pbx.voicemail_op(u.id, id, op).await? {
                     return Ok(Reply::text(self.t("Voicemail not found.")));
                 }
-                if tracked {
+                let can = |f: fn(&crate::platform::Capabilities) -> bool| platform.as_ref().is_some_and(|p| f(&p.capabilities()));
+                if tracked && (op == VmOp::Heard && can(|c| c.edit) || op == VmOp::Delete && can(|c| c.delete)) {
                     return Ok(Reply::none());
                 }
+                // the mailbox list ("/pbx voicemail"): a text message without audio, replaced as a whole
                 if l {
                     return Ok(Reply { message: None, update: Some(self.render_mailbox(u.id).await?) });
                 }
@@ -810,9 +812,14 @@ impl Bot {
                     VmOp::Heard => format!("{} {}", self.t("heard by"), u.name),
                     VmOp::Delete => format!("{} {}", self.t("deleted by"), u.name),
                 };
-                match self.pbx.voicemail(None, id).await? {
-                    Some(v) => Reply { message: None, update: Some(self.render_voicemail(&v, Some(state))) },
-                    None => Reply::none(),
+                let Some(v) = self.pbx.voicemail(None, id).await? else { return Ok(Reply::none()) };
+                let msg = self.render_voicemail(&v, Some(state));
+                match (&message, platform.filter(|p| p.capabilities().edit)) {
+                    (Some(m), Some(p)) => {
+                        p.edit(m, &msg).await?;
+                        Reply::none()
+                    }
+                    _ => Reply { message: None, update: Some(msg) },
                 }
             }
         })

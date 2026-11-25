@@ -249,6 +249,18 @@ function pbxToast(text, ok) {
       } catch (_) { pbxToast(pbxMsg("msgCallFailed"), false); }
       return;
     }
+    const tr = e.target.closest("button[data-trunkregister]");
+    if (tr) {
+      e.preventDefault();
+      if (tr.dataset.confirmText && !confirm(tr.dataset.confirmText)) return;
+      tr.disabled = true;
+      try {
+        const r = await post(`/admin/trunks/${tr.dataset.trunkregister}/register`);
+        pbxToast(r.message, r.ok);
+      } catch (_) { pbxToast(pbxMsg("msgCallFailed"), false); }
+      tr.disabled = false;
+      return;
+    }
     const rt = e.target.closest("button[data-ringtest]");
     if (rt) {
       e.preventDefault();

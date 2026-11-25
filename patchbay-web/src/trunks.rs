@@ -1016,6 +1016,38 @@ pub async fn trunk_delete(State(app): State<AppState>, Admin(a): Admin, Path(id)
     Ok(Redirect::to("/admin/trunks").into_response())
 }
 
+/// POST /admin/trunks/{id}/register: registers the trunk again right away (AMI PJSIPRegister),
+/// e.g. after the provider unlocked it, instead of waiting for the next retry (up to 10 minutes
+/// after a rejection). Only this trunk's registration; calls and devices are not affected.
+pub async fn trunk_register(State(app): State<AppState>, Admin(a): Admin, Path(id): Path<i32>) -> Result<Response, AppError> {
+    let t = load(&app.db, id).await?;
+    let r = t.asterisk_ref.clone();
+    let regs = ami::outbound_registrations().await.map_err(AppError::Internal)?;
+    let Some(before) = regs.get(&r).cloned().filter(|_| t.kind == "sip_register") else {
+        let msg = "This trunk has no registration (only enabled SIP trunks with registration).";
+        return Ok(axum::Json(serde_json::json!({"ok": false, "message": msg})).into_response());
+    };
+    let resp = ami::action(&[("Action", "PJSIPRegister"), ("Registration", &r)]).await.map_err(AppError::Internal)?;
+    if resp.get("Response").map(String::as_str) != Some("Success") {
+        let why = resp.get("Message").cloned().unwrap_or_default();
+        return Ok(axum::Json(serde_json::json!({"ok": false, "message": format!("Registration not started: {why}")})).into_response());
+    }
+    db::audit(&app.db, &a.session.sub, "trunk.register", &format!("trunk:{r}"), serde_json::json!({})).await?;
+    // the provider usually answers within a second or two. The action returns before the new
+    // attempt has started, so an unchanged final status only counts after 2 s (it may still be
+    // the old one); a changed one counts at once. At most 5 s.
+    let mut status = String::new();
+    for i in 1..=10 {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        status = ami::outbound_registrations().await.map_err(AppError::Internal)?.get(&r).cloned().unwrap_or_default();
+        if (status == "Registered" || status == "Rejected") && (status != before || i >= 4) {
+            break;
+        }
+    }
+    let ok = status == "Registered";
+    Ok(axum::Json(serde_json::json!({"ok": ok, "message": format!("Registration: {}", if status.is_empty() { "unknown" } else { &status })})).into_response())
+}
+
 /// Ping a peer (iax2 show peer → status / latency)
 pub async fn trunk_test(State(app): State<AppState>, Admin(_): Admin, Path(id): Path<i32>) -> Result<Response, AppError> {
     let t = load(&app.db, id).await?;

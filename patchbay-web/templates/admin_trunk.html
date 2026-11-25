@@ -67,6 +67,7 @@
   </table>
   <p class="row"><button class="primary">{{ c.t.s("Save") }}</button>
     {% if !is_new %}<button type="button" data-trunktest="{{ t.id }}">{{ c.t.s("Test connection") }}</button>{% endif %}
+    {% if !is_new && t.kind == "sip_register" && t.enabled %}<button type="button" data-trunkregister="{{ t.id }}" data-confirm-text="{{ c.t.s("Register again now? Incoming calls on this trunk can fail for a moment.") }}" title="{{ c.t.s("Registers this trunk with the provider again right away instead of waiting for the next retry") }}">{{ c.t.s("Register now") }}</button>{% endif %}
     <a href="/admin/trunks">{{ c.t.s("Cancel") }}</a></p>
 </form>
 {% if !is_new %}

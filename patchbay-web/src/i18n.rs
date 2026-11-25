@@ -1158,6 +1158,15 @@ fn de_pairs() -> Vec<(&'static str, &'static str)> {
             "Es klingeln die Geräte der Mitglieder, bei denen „Klingeln“ an ist. Mitglieder mit DND oder ohne Gerät werden übersprungen. Eigene Umleitungen gelten bei Gruppenanrufen nicht.",
         ),
         ("Add member", "Mitglied hinzufügen"),
+        ("Register now", "Jetzt registrieren"),
+        (
+            "Register again now? Incoming calls on this trunk can fail for a moment.",
+            "Jetzt neu registrieren? Eingehende Anrufe auf dieser Leitung können kurz fehlschlagen.",
+        ),
+        (
+            "Registers this trunk with the provider again right away instead of waiting for the next retry",
+            "Meldet diese Leitung sofort neu beim Anbieter an, statt auf den nächsten Versuch zu warten",
+        ),
         ("Edit entry", "Eintrag bearbeiten"),
         ("Block a number", "Nummer sperren"),
         ("Edit holiday", "Feiertag bearbeiten"),

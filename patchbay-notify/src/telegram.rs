@@ -43,7 +43,7 @@ impl ChatPlatform for Telegram {
         ID
     }
     fn capabilities(&self) -> Capabilities {
-        Capabilities { buttons: true, edit: true, audio: Some(AudioFormat::OggOpus), reactions: false, slash_commands: true, identity_email: false }
+        Capabilities { buttons: true, edit: true, delete: false, audio: Some(AudioFormat::OggOpus), reactions: false, slash_commands: true, identity_email: false }
     }
     async fn send(&self, _to: &Dest, _msg: &OutMessage) -> Result<MessageRef> {
         bail!("Telegram adapter not implemented")

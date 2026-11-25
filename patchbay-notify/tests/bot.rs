@@ -98,7 +98,8 @@ impl Pbx for FakePbx {
     }
     async fn voicemail(&self, uid: Option<i32>, id: i32) -> Result<Option<VoicemailInfo>> {
         // user 2 has no access to voicemail 7
-        Ok((id == 7 && uid != Some(2)).then(|| vm(7, self.vm_ops.lock().unwrap().iter().any(|o| o.2 == VmOp::Heard))))
+        let ops = self.vm_ops.lock().unwrap();
+        Ok((id == 7 && uid != Some(2)).then(|| VoicemailInfo { deleted: ops.iter().any(|o| o.2 == VmOp::Delete), ..vm(7, ops.iter().any(|o| o.2 == VmOp::Heard)) }))
     }
     async fn voicemail_audio(&self, uid: Option<i32>, id: i32, format: AudioFormat) -> Result<Option<Audio>> {
         assert_eq!(format, AudioFormat::Mp3);
@@ -138,6 +139,7 @@ fn vm(id: i32, heard: bool) -> VoicemailInfo {
         duration_s: 12,
         mailbox: "1010".into(),
         heard,
+        heard_by: heard.then(|| "Grace".into()),
         deleted: false,
     }
 }
@@ -146,6 +148,7 @@ fn vm(id: i32, heard: bool) -> VoicemailInfo {
 struct FakeStore {
     links: Mutex<HashMap<(String, String), (i32, String)>>,
     groups: Mutex<Vec<(String, String, i32)>>,
+    vm_posts: Mutex<Vec<(i32, String, MessageRef)>>,
 }
 
 #[async_trait]
@@ -182,6 +185,17 @@ impl Store for FakeStore {
         g.retain(|x| !(x.0 == platform && x.1 == channel && x.2 == gid));
         Ok(g.len() != n)
     }
+    async fn vm_post_add(&self, vm: i32, platform: &str, post: &MessageRef) -> Result<()> {
+        self.vm_posts.lock().unwrap().push((vm, platform.into(), post.clone()));
+        Ok(())
+    }
+    async fn vm_posts(&self, vm: i32) -> Result<Vec<(String, MessageRef)>> {
+        Ok(self.vm_posts.lock().unwrap().iter().filter(|p| p.0 == vm).map(|p| (p.1.clone(), p.2.clone())).collect())
+    }
+    async fn vm_posts_forget(&self, vm: i32) -> Result<()> {
+        self.vm_posts.lock().unwrap().retain(|p| p.0 != vm);
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -189,6 +203,7 @@ enum Sent {
     Post(Dest, OutMessage),
     Edit(MessageRef, OutMessage),
     Audio(Dest, OutMessage, String),
+    Delete(MessageRef),
 }
 
 #[derive(Default)]
@@ -208,7 +223,7 @@ impl ChatPlatform for FakeChat {
         "fake"
     }
     fn capabilities(&self) -> Capabilities {
-        Capabilities { buttons: true, edit: true, audio: Some(AudioFormat::Mp3), reactions: false, slash_commands: true, identity_email: true }
+        Capabilities { buttons: true, edit: true, delete: true, audio: Some(AudioFormat::Mp3), reactions: false, slash_commands: true, identity_email: true }
     }
     async fn send(&self, to: &Dest, msg: &OutMessage) -> Result<MessageRef> {
         let mut s = self.sent.lock().unwrap();
@@ -223,6 +238,10 @@ impl ChatPlatform for FakeChat {
         let mut s = self.sent.lock().unwrap();
         s.push(Sent::Audio(to.clone(), msg.clone(), audio.filename.clone()));
         Ok(MessageRef { channel: "c".into(), id: format!("p{}", s.len()) })
+    }
+    async fn delete(&self, r: &MessageRef) -> Result<()> {
+        self.sent.lock().unwrap().push(Sent::Delete(r.clone()));
+        Ok(())
     }
     async fn user_email(&self, chat_user: &str) -> Result<Option<String>> {
         Ok(match chat_user {
@@ -467,4 +486,46 @@ async fn voicemail_buttons_apply_to_the_mailbox() {
     s.bot.handle(click("mm-grace", Action::VmPlay { id: 7 })).await;
     let sent = s.chat.take();
     assert!(matches!(&sent[..], [Sent::Audio(Dest::User(u), _, _)] if u == "mm-grace"), "{sent:?}");
+}
+
+#[tokio::test]
+async fn voicemail_posts_follow_heard_and_delete() {
+    let s = setup(LinkMode::Auto);
+    // group voicemail: channel post + DM to a member who wants voicemails in chat
+    s.store.groups.lock().unwrap().push(("fake".into(), "sales".into(), 3));
+    s.store.links.lock().unwrap().insert(("fake".into(), "mm-grace".into()), (4, "auto".into()));
+    s.bot.on_event(&PbxEvent::VoicemailNew { id: 7, call_id: None, owner: group(), caller: caller(), duration_s: 12 }).await;
+    let sent = s.chat.take();
+    assert!(matches!(&sent[..], [Sent::Audio(Dest::Channel(_), _, _)]), "{sent:?}");
+    // "Play" sends a copy as DM; it is tracked as well
+    s.bot.handle(click("mm-grace", Action::VmPlay { id: 7 })).await;
+    s.chat.take();
+    let posts = s.store.vm_posts.lock().unwrap().clone();
+    assert_eq!(posts.len(), 2, "{posts:?}");
+
+    // heard somewhere else (web): every post is edited
+    s.pbx.vm_ops.lock().unwrap().push((4, 7, VmOp::Heard));
+    s.bot.on_event(&PbxEvent::VoicemailChanged { id: 7 }).await;
+    let sent = s.chat.take();
+    assert_eq!(sent.len(), 2, "{sent:?}");
+    for x in &sent {
+        let Sent::Edit(_, m) = x else { panic!("{sent:?}") };
+        assert!(m.text.contains("heard by Grace"), "{}", m.text);
+        assert!(!m.buttons().any(|b| matches!(b.action, Action::VmHeard { .. })));
+    }
+
+    // deleted with the button on the channel post: no edit of that post, the change event deletes
+    // both posts and forgets them
+    let mut c = click("mm-grace", Action::VmDelete { id: 7, l: false });
+    c.kind = InboundKind::Action { action: Action::VmDelete { id: 7, l: false }, message: Some(posts[0].2.clone()) };
+    let r = s.bot.handle(c).await;
+    assert!(r.update.is_none() && r.message.is_none(), "{r:?}");
+    s.bot.on_event(&PbxEvent::VoicemailChanged { id: 7 }).await;
+    let sent = s.chat.take();
+    assert_eq!(sent.len(), 2, "{sent:?}");
+    assert!(sent.iter().all(|x| matches!(x, Sent::Delete(_))), "{sent:?}");
+    assert!(s.store.vm_posts.lock().unwrap().is_empty());
+    // a later change finds nothing to do
+    s.bot.on_event(&PbxEvent::VoicemailChanged { id: 7 }).await;
+    assert!(s.chat.take().is_empty());
 }

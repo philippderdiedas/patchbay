@@ -325,7 +325,7 @@ impl ChatPlatform for Mattermost {
     }
 
     fn capabilities(&self) -> Capabilities {
-        Capabilities { buttons: true, edit: true, audio: Some(AudioFormat::Mp3), reactions: false, slash_commands: true, identity_email: true }
+        Capabilities { buttons: true, edit: true, delete: true, audio: Some(AudioFormat::Mp3), reactions: false, slash_commands: true, identity_email: true }
     }
 
     async fn send(&self, to: &Dest, msg: &OutMessage) -> Result<MessageRef> {
@@ -338,6 +338,16 @@ impl ChatPlatform for Mattermost {
         let body = json!({ "message": msg.text, "props": { "attachments": self.attachments(msg) } });
         self.call(self.http.put(self.api_url(&format!("/posts/{}/patch", r.id))).json(&body)).await?;
         Ok(())
+    }
+
+    async fn delete(&self, r: &MessageRef) -> Result<()> {
+        anyhow::ensure!(!r.id.is_empty() && r.id.chars().all(|c| c.is_ascii_alphanumeric()), "invalid post id");
+        match self.call(self.http.delete(self.api_url(&format!("/posts/{}", r.id)))).await {
+            Ok(_) => Ok(()),
+            // removed by hand already
+            Err(e) if e.to_string().contains(" 404 ") => Ok(()),
+            Err(e) => Err(e),
+        }
     }
 
     async fn send_audio(&self, to: &Dest, msg: &OutMessage, audio: &Audio) -> Result<MessageRef> {

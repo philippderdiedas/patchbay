@@ -44,7 +44,7 @@ impl ChatPlatform for Matrix {
         ID
     }
     fn capabilities(&self) -> Capabilities {
-        Capabilities { buttons: false, edit: true, audio: Some(AudioFormat::OggOpus), reactions: true, slash_commands: false, identity_email: false }
+        Capabilities { buttons: false, edit: true, delete: false, audio: Some(AudioFormat::OggOpus), reactions: true, slash_commands: false, identity_email: false }
     }
     async fn send(&self, _to: &Dest, _msg: &OutMessage) -> Result<MessageRef> {
         bail!("Matrix adapter not implemented")

@@ -13,6 +13,8 @@ use crate::model::{Action, Audio, AudioFormat, Dest, MessageRef, OutMessage, Rep
 pub struct Capabilities {
     pub buttons: bool,
     pub edit: bool,
+    /// the bot can delete its own messages (voicemail posts of deleted voicemails)
+    pub delete: bool,
     pub audio: Option<AudioFormat>,
     /// reactions on messages arrive as inbound events (Matrix without buttons)
     pub reactions: bool,
@@ -57,6 +59,10 @@ pub trait ChatPlatform: Send + Sync {
     async fn send(&self, to: &Dest, msg: &OutMessage) -> Result<MessageRef>;
     async fn edit(&self, msg: &MessageRef, new: &OutMessage) -> Result<()>;
     async fn send_audio(&self, to: &Dest, msg: &OutMessage, audio: &Audio) -> Result<MessageRef>;
+    /// Deletes a message the bot sent (a message that is gone already counts as deleted).
+    async fn delete(&self, _msg: &MessageRef) -> Result<()> {
+        anyhow::bail!("deleting messages is not supported on {}", self.id())
+    }
     /// e-mail address of a chat user, if the platform knows and shows it
     async fn user_email(&self, chat_user: &str) -> Result<Option<String>>;
     /// Receives inbound messages (WebSocket, long polling …) until the process ends; reconnects

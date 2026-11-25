@@ -430,6 +430,11 @@ pub async fn update_mwi(app: &AppState) {
     }
 }
 
+/// A voicemail was marked heard/unheard or deleted: the chat bot brings its posts in line.
+pub fn changed(app: &AppState, voicemail_id: i32) {
+    app.events.publish(patchbay_notify::PbxEvent::VoicemailChanged { id: voicemail_id });
+}
+
 /// Like `update_mwi`, but only the mailboxes a message counts for (its owner or the members of
 /// its call group).
 pub async fn update_mwi_for(app: &AppState, voicemail_id: i32) {
@@ -504,8 +509,9 @@ pub fn spawn_cleanup(app: AppState) {
                 .bind(RETENTION_DAYS)
                 .fetch_all(&app.db)
                 .await?;
-                for (_, f) in &old {
+                for (id, f) in &old {
                     remove_audio(f).await;
+                    changed(&app, *id);
                 }
                 if !old.is_empty() {
                     update_mwi(&app).await;
@@ -678,13 +684,18 @@ pub async fn audio(State(app): State<AppState>, u: CurrentUser, Path(id): Path<i
     let path = accessible(&app.db, uid, id).await?;
     let data = tokio::fs::read(&path).await.map_err(|_| AppError::NotFound)?;
     // Listening marks the message as heard
-    sqlx::query("UPDATE voicemails SET heard_at = COALESCE(heard_at, now()), heard_by = COALESCE(heard_by, $2) WHERE id = $1")
+    // only the first time: the player may fetch the file several times
+    let n = sqlx::query("UPDATE voicemails SET heard_at = now(), heard_by = $2 WHERE id = $1 AND heard_at IS NULL")
         .bind(id)
         .bind(uid)
         .execute(&app.db)
         .await
-        .map_err(anyhow::Error::from)?;
-    update_mwi_for(&app, id).await;
+        .map_err(anyhow::Error::from)?
+        .rows_affected();
+    if n > 0 {
+        update_mwi_for(&app, id).await;
+        changed(&app, id);
+    }
     Ok(([(header::CONTENT_TYPE, "audio/mpeg"), (header::CACHE_CONTROL, "private, no-store")], Body::from(data)).into_response())
 }
 
@@ -718,6 +729,7 @@ pub async fn heard_all(State(app): State<AppState>, u: CurrentUser) -> Result<Re
         db::audit(&app.db, &u.session.sub, "voicemail.heard_all", &format!("user:{uid}"), serde_json::json!({ "ids": ids })).await?;
         for id in ids {
             update_mwi_for(&app, id).await;
+            changed(&app, id);
         }
     }
     Ok(Redirect::to("/voicemail").into_response())
@@ -741,6 +753,7 @@ pub async fn apply(app: &AppState, uid: i32, id: i32, action: &str, actor: &str)
     };
     db::audit(&app.db, actor, &format!("voicemail.{action}"), &format!("voicemail:{id}"), serde_json::json!({})).await?;
     update_mwi_for(app, id).await;
+    changed(app, id);
     Ok(true)
 }
 

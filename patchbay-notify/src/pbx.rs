@@ -7,7 +7,7 @@ use async_trait::async_trait;
 
 use crate::{
     event::Presence,
-    model::{Audio, AudioFormat},
+    model::{Audio, AudioFormat, MessageRef},
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -54,6 +54,8 @@ pub struct VoicemailInfo {
     /// "1010" or "5110 Sales EN"
     pub mailbox: String,
     pub heard: bool,
+    /// who marked it heard (name), if known
+    pub heard_by: Option<String>,
     pub deleted: bool,
 }
 
@@ -164,4 +166,9 @@ pub trait Store: Send + Sync {
     async fn channel_groups(&self, platform: &str, channel: &str) -> Result<Vec<i32>>;
     async fn link_group(&self, platform: &str, channel: &str, gid: i32, by: i32) -> Result<bool>;
     async fn unlink_group(&self, platform: &str, channel: &str, gid: i32) -> Result<bool>;
+    /// chat posts showing a voicemail (delivery, "Play" copies), kept until the voicemail is
+    /// deleted, so heard/unheard/delete reach every copy
+    async fn vm_post_add(&self, vm: i32, platform: &str, post: &MessageRef) -> Result<()>;
+    async fn vm_posts(&self, vm: i32) -> Result<Vec<(String, MessageRef)>>;
+    async fn vm_posts_forget(&self, vm: i32) -> Result<()>;
 }

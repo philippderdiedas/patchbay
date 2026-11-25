@@ -131,6 +131,8 @@ pub async fn enrich(db: &PgPool, ev: &mut PbxEvent) -> sqlx::Result<()> {
             caller_name(db, caller).await?;
             target_names(db, owner).await?;
         }
+        // the bot reads the voicemail's current state itself
+        PbxEvent::VoicemailChanged { .. } => {}
         PbxEvent::PresenceChanged { ext, state } => {
             if *state == Presence::Available {
                 let dnd: Option<bool> = sqlx::query_scalar("SELECT dnd FROM users WHERE extension::text = $1 AND deleted_at IS NULL").bind(&*ext).fetch_optional(db).await?;

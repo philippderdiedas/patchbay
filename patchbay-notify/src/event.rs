@@ -150,6 +150,10 @@ pub enum PbxEvent {
     CallEnded { call_id: String, caller: Party, answered: bool, duration_s: u64, talk_s: Option<u64> },
     #[serde(rename = "voicemail.new")]
     VoicemailNew { id: i32, call_id: Option<String>, owner: Target, caller: Party, duration_s: i32 },
+    /// A voicemail was marked heard or unheard, or deleted (web, phone, chat, retention); the
+    /// current state is read from the PBX.
+    #[serde(rename = "voicemail.changed")]
+    VoicemailChanged { id: i32 },
     #[serde(rename = "presence.changed")]
     PresenceChanged { ext: String, state: Presence },
 }
@@ -162,6 +166,7 @@ impl PbxEvent {
             PbxEvent::CallMissed { .. } => "call.missed",
             PbxEvent::CallEnded { .. } => "call.ended",
             PbxEvent::VoicemailNew { .. } => "voicemail.new",
+            PbxEvent::VoicemailChanged { .. } => "voicemail.changed",
             PbxEvent::PresenceChanged { .. } => "presence.changed",
         }
     }
@@ -172,7 +177,7 @@ impl PbxEvent {
             | PbxEvent::CallMissed { call_id, .. }
             | PbxEvent::CallEnded { call_id, .. } => Some(call_id),
             PbxEvent::VoicemailNew { call_id, .. } => call_id.as_deref(),
-            PbxEvent::PresenceChanged { .. } => None,
+            PbxEvent::VoicemailChanged { .. } | PbxEvent::PresenceChanged { .. } => None,
         }
     }
 }

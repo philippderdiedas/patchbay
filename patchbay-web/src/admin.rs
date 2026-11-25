@@ -435,8 +435,8 @@ pub async fn user_delete(State(app): State<AppState>, Admin(a): Admin, Path(id):
             refs.join(", ")
 )));
     }
-    let vm_files: Vec<String> =
-        sqlx::query_scalar("SELECT file_path FROM voicemails WHERE owner_type = 'user' AND owner_id = $1 AND deleted_at IS NULL")
+    let vms: Vec<(i32, String)> =
+        sqlx::query_as("SELECT id, file_path FROM voicemails WHERE owner_type = 'user' AND owner_id = $1 AND deleted_at IS NULL")
             .bind(id)
             .fetch_all(&mut *tx)
             .await
@@ -467,8 +467,10 @@ pub async fn user_delete(State(app): State<AppState>, Admin(a): Admin, Path(id):
     }
     tx.commit().await.map_err(anyhow::Error::from)?;
     // the person's messages are gone with them: remove the audio files too
-    for f in &vm_files {
+    for (vm, f) in &vms {
         crate::voicemail::remove_audio(f).await;
+        // their chat posts go as well
+        crate::voicemail::changed(&app, *vm);
     }
     // drop the cached endpoints and hang up calls still running on the devices
     for d in &devices {

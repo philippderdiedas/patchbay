@@ -61,6 +61,7 @@ fn de_pairs() -> Vec<(&'static str, &'static str)> {
         ("Create a code at", "Erzeuge einen Code unter"),
         ("Delete", "Löschen"),
         ("deleted by", "gelöscht von"),
+        ("deleted", "gelöscht"),
         ("Dialled number", "Gewählte Nummer"),
         ("DND off", "DND aus"),
         ("DND on", "DND an"),

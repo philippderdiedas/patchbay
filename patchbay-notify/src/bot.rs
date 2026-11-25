@@ -212,6 +212,7 @@ impl Bot {
                 }
                 self.deliver_voicemail(*id, owner).await?;
             }
+            PbxEvent::VoicemailChanged { id } => self.sync_voicemail(*id).await?,
             _ => {}
         }
         Ok(())
@@ -322,8 +323,53 @@ impl Bot {
                 }
                 None => p.send(&dest, &msg).await,
             };
-            if let Err(e) = res {
-                tracing::warn!("bot: voicemail {id} to {} failed: {e:#}", p.id());
+            match res {
+                Ok(r) => self.store.vm_post_add(id, p.id(), &r).await?,
+                Err(e) => tracing::warn!("bot: voicemail {id} to {} failed: {e:#}", p.id()),
+            }
+        }
+        Ok(())
+    }
+
+    /// Brings every chat post of a voicemail in line with its state: heard / unheard are edited,
+    /// a deleted voicemail's posts are deleted (and forgotten).
+    async fn sync_voicemail(&self, id: i32) -> anyhow::Result<()> {
+        let posts = self.store.vm_posts(id).await?;
+        if posts.is_empty() {
+            return Ok(());
+        }
+        let v = self.pbx.voicemail(None, id).await?;
+        match v.filter(|v| !v.deleted) {
+            None => {
+                // a post that cannot be deleted (no permission, archived channel, platform without
+                // delete) at least loses its buttons and says so
+                let gone = self.pbx.voicemail(None, id).await?.map(|v| self.render_voicemail(&v, Some(self.t("deleted").to_string())));
+                for (platform, post) in &posts {
+                    let Some(p) = self.platform(platform) else { continue };
+                    let res = if p.capabilities().delete { p.delete(post).await } else { Err(anyhow::anyhow!("not supported")) };
+                    if let Err(e) = res {
+                        tracing::warn!("bot: deleting voicemail {id} post on {platform} failed: {e:#}");
+                        if let (Some(m), true) = (&gone, p.capabilities().edit) {
+                            if let Err(e) = p.edit(post, m).await {
+                                tracing::warn!("bot: marking voicemail {id} post on {platform} deleted failed: {e:#}");
+                            }
+                        }
+                    }
+                }
+                self.store.vm_posts_forget(id).await?;
+            }
+            Some(v) => {
+                let state = match (&v.heard, &v.heard_by) {
+                    (true, Some(by)) => Some(format!("{} {by}", self.t("heard by"))),
+                    _ => None,
+                };
+                let msg = self.render_voicemail(&v, state);
+                for (platform, post) in &posts {
+                    let Some(p) = self.platform(platform).filter(|p| p.capabilities().edit) else { continue };
+                    if let Err(e) = p.edit(post, &msg).await {
+                        tracing::warn!("bot: editing voicemail {id} post on {platform} failed: {e:#}");
+                    }
+                }
             }
         }
         Ok(())
@@ -720,7 +766,15 @@ impl Bot {
                 match p.capabilities().audio {
                     Some(fmt) => match self.pbx.voicemail_audio(Some(u.id), id, fmt).await? {
                         Some(a) => {
-                            p.send_audio(&Dest::User(inb.chat_user.clone()), &msg, &a).await?;
+                            let r = p.send_audio(&Dest::User(inb.chat_user.clone()), &msg, &a).await?;
+                            if let Err(e) = self.store.vm_post_add(id, p.id(), &r).await {
+                                tracing::warn!("bot: recording voicemail {id} post failed: {e:#}");
+                            }
+                            // deleted meanwhile (the change event may have run before the post was
+                            // recorded): remove this copy as well
+                            if self.pbx.voicemail(None, id).await?.is_none_or(|v| v.deleted) {
+                                self.sync_voicemail(id).await?;
+                            }
                             if inb.direct { Reply::none() } else { Reply::text(self.t("Sent to you as a direct message.")) }
                         }
                         None => Reply::text(self.t("Voicemail not found.")),
@@ -730,8 +784,24 @@ impl Bot {
             }
             Action::VmHeard { id, l } | Action::VmDelete { id, l } => {
                 let op = if matches!(action, Action::VmHeard { .. }) { VmOp::Heard } else { VmOp::Delete };
+                // a tracked post of a deleted voicemail is deleted by the change event; editing it
+                // here as well would race with that
+                let message = match &inb.kind {
+                    InboundKind::Action { message, .. } => message.clone(),
+                    _ => None,
+                };
+                let can_delete = self.platform(inb.platform).is_some_and(|p| p.capabilities().delete);
+                let tracked = match &message {
+                    Some(m) if op == VmOp::Delete && !l && can_delete => {
+                        self.store.vm_posts(id).await?.iter().any(|(pl, r)| pl == inb.platform && r.id == m.id)
+                    }
+                    _ => false,
+                };
                 if !self.pbx.voicemail_op(u.id, id, op).await? {
                     return Ok(Reply::text(self.t("Voicemail not found.")));
+                }
+                if tracked {
+                    return Ok(Reply::none());
                 }
                 if l {
                     return Ok(Reply { message: None, update: Some(self.render_mailbox(u.id).await?) });

@@ -27,7 +27,7 @@ use patchbay_notify::{
     event::Presence,
     i18n::Lang,
     mattermost::{Mattermost, MattermostConfig},
-    model::{Audio, AudioFormat},
+    model::{Audio, AudioFormat, MessageRef},
     pbx::{CallListEntry, DirectoryEntry, Pbx, PbxGroup, PbxUser, Store, UserStatus, VmDelivery, VmOp, VoicemailInfo},
 };
 use serde::Deserialize;
@@ -190,6 +190,7 @@ struct VmRow {
     duration_s: Option<i32>,
     mailbox: String,
     heard: bool,
+    heard_by: Option<String>,
     deleted: bool,
 }
 
@@ -203,6 +204,7 @@ impl From<VmRow> for VoicemailInfo {
             duration_s: r.duration_s.unwrap_or(0),
             mailbox: r.mailbox,
             heard: r.heard,
+            heard_by: r.heard_by,
             deleted: r.deleted,
         }
     }
@@ -212,7 +214,8 @@ const VM_COLS: &str = "v.id, to_char(v.received_at, 'DD.MM.YY HH24:MI') AS recei
     v.caller_e164, v.caller_name, v.duration_s,
     CASE v.owner_type WHEN 'user' THEN (SELECT extension::text FROM users WHERE id = v.owner_id)
          ELSE (SELECT number || ' ' || name FROM groups WHERE id = v.owner_id) END AS mailbox,
-    v.heard_at IS NOT NULL AS heard, v.deleted_at IS NOT NULL AS deleted";
+    v.heard_at IS NOT NULL AS heard, (SELECT display_name FROM users WHERE id = v.heard_by) AS heard_by,
+    v.deleted_at IS NOT NULL AS deleted";
 
 /// Line state of the colleagues: extension → presence (hints + DND)
 async fn presences(db: &PgPool) -> HashMap<String, Presence> {
@@ -509,6 +512,34 @@ impl Store for Bridge {
             .bind(code_hash(code))
             .fetch_optional(&self.app.db)
             .await?)
+    }
+
+    async fn vm_post_add(&self, vm: i32, platform: &str, post: &MessageRef) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO voicemail_chat_posts (voicemail_id, platform, channel, post_id) VALUES ($1, $2, $3, $4)
+             ON CONFLICT (platform, post_id) DO NOTHING",
+        )
+        .bind(vm)
+        .bind(platform)
+        .bind(&post.channel)
+        .bind(&post.id)
+        .execute(&self.app.db)
+        .await?;
+        Ok(())
+    }
+
+    async fn vm_posts(&self, vm: i32) -> Result<Vec<(String, MessageRef)>> {
+        let rows: Vec<(String, String, String)> =
+            sqlx::query_as("SELECT platform, channel, post_id FROM voicemail_chat_posts WHERE voicemail_id = $1 ORDER BY created_at")
+                .bind(vm)
+                .fetch_all(&self.app.db)
+                .await?;
+        Ok(rows.into_iter().map(|(p, channel, id)| (p, MessageRef { channel, id })).collect())
+    }
+
+    async fn vm_posts_forget(&self, vm: i32) -> Result<()> {
+        sqlx::query("DELETE FROM voicemail_chat_posts WHERE voicemail_id = $1").bind(vm).execute(&self.app.db).await?;
+        Ok(())
     }
 
     async fn group_channels(&self, gid: i32) -> Result<Vec<(String, String)>> {

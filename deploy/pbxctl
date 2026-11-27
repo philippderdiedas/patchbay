@@ -10,13 +10,17 @@
 #   pbxctl device-add <extension> "<label>" <linphone|dect|deskphone|generic> [--udp] [--admin]
 #   pbxctl device-list [<extension>]
 #   pbxctl device-enable|device-disable <device-number>
+#   pbxctl asterisk-check     checks $PBX_DIR/config/asterisk (own Asterisk configuration) in a
+#                             throwaway container of the running image
+#   pbxctl asterisk-reload    asterisk-check, then reloads Asterisk's configuration (no restart)
 #
 # Linphone provisioning (QR code / link) is in the web UI (patchbay-web prov.rs), not here.
 set -euo pipefail
 
 PG=(docker exec -i "${PBX_PROJECT:-patchbay}-postgres-1" psql -U pbx -d pbx -v ON_ERROR_STOP=1 -q)
 # </dev/null: docker exec -i would swallow stdin (login-set reads the password from it)
-REALM=$("${PG[@]}" -tA -c "SELECT value FROM settings WHERE key = 'sip_realm'" </dev/null)
+# (only where needed: asterisk-check works without the database)
+realm() { "${PG[@]}" -tA -c "SELECT value FROM settings WHERE key = 'sip_realm'" </dev/null; }
 
 die() { echo "Error: $*" >&2; exit 1; }
 sql() { "${PG[@]}" -tA "$@"; }
@@ -37,6 +41,36 @@ audit() {
 
 cmd=${1:-}; shift || true
 case "$cmd" in
+asterisk-check|asterisk-reload)
+    # own Asterisk configuration: checked with the image that runs, against the mounted state dir
+    ast="${PBX_PROJECT:-patchbay}-asterisk-1"
+    # the image the container runs (by id: the tag may point to a newer, pulled one)
+    image=$(docker inspect -f '{{.Image}}' "$ast") || die "container $ast not found"
+    state=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/state"}}{{.Source}}{{end}}{{end}}' "$ast")
+    [ -n "$state" ] || die "$ast has no /state mount"
+    custom="$state/config/asterisk"
+    if [ -d "$custom" ]; then
+        docker run --rm --network none --user root -v "$custom:/etc/asterisk-custom:ro" \
+            -v "$state/generated:/etc/asterisk-generated:ro" \
+            --entrypoint /usr/local/bin/check-custom.sh "$image" || die "not reloaded: fix the errors above"
+    else
+        echo "$custom does not exist: no own configuration"
+    fi
+    if [ "$cmd" = asterisk-reload ]; then
+        # only what the folders extend (a full "core reload" would also reload res_odbc, AMI and
+        # HTTP under patchbay-web's feet); new own <name>.conf files and modules.d need a restart
+        declare -A rel=([extensions]="dialplan reload" [func_odbc]="module reload func_odbc.so"
+            [manager]="manager reload" [ari]="module reload res_ari.so" [pjsip]="module reload res_pjsip.so"
+            [iax]="iax2 reload" [confbridge]="module reload app_confbridge.so" [musiconhold]="moh reload"
+            [features]="module reload features" [queues]="module reload app_queue.so" [logger]="logger reload")
+        for d in "${!rel[@]}"; do
+            [ -d "$custom/$d.d" ] || continue
+            echo "== ${rel[$d]}"
+            docker exec "$ast" asterisk -rx "${rel[$d]}"
+        done
+        echo "Reloaded. New files in config/asterisk/ itself and changes in modules.d need: docker compose restart asterisk"
+    fi
+    ;;
 user-add)
     ext=${1:?extension}; name=${2:?name}; shift 2
     kind=person; email=NULL; mobile=NULL
@@ -72,6 +106,7 @@ login-set)
     printf '%s\n' "$pw1" | docker exec -i "${PBX_PROJECT:-patchbay}-patchbay-web-1" /usr/local/bin/patchbay-web set-password "$@"
     ;;
 device-add)
+    REALM=$(realm)
     ext=${1:?extension}; label=${2:?label}; type=${3:?type}; shift 3
     transport=tls; managed=self
     [ "$type" = linphone ] || transport=udp
@@ -124,5 +159,5 @@ device-enable|device-disable)
     echo "Device $num: enabled=$val"
     ;;
 *)
-    sed -n '2,12p' "$0"; exit 1 ;;
+    sed -n '2,15p' "$0"; exit 1 ;;
 esac

@@ -38,6 +38,26 @@ link() {
 install -d -o asterisk -g asterisk -m 750 "$ST/asterisk" "$ST/asterisk/db" "$ST/asterisk/log"
 link "$ST/keys" /etc/asterisk-keys
 link "$ST/generated" /etc/asterisk-generated
+# own additions of the site ($PBX_DIR/config/asterisk): <file>.d/*.conf are included by the image's
+# files; a <name>.conf the image does not have (configuration of a module Patchbay does not use,
+# e.g. sccp.conf) is linked into /etc/asterisk. Files of the image cannot be replaced.
+link "$ST/config/asterisk" /etc/asterisk-custom
+for f in "$ST"/config/asterisk/*.conf; do
+    [ -f "$f" ] || continue
+    n=$(basename "$f")
+    if [ -e "/etc/asterisk/$n" ] && [ ! -L "/etc/asterisk/$n" ]; then
+        echo "site-config: config/asterisk/$n is ignored: $n is part of the image (additions go into ${n%.conf}.d/)" >&2
+        continue
+    fi
+    ln -sfn "/etc/asterisk-custom/$n" "/etc/asterisk/$n"
+done
+# Asterisk runs as user asterisk: unreadable own files would be skipped silently by #tryinclude
+if [ -d "$ST/config/asterisk" ]; then
+    find -L "$ST/config/asterisk" -name '*.conf' | while read -r f; do
+        setpriv --reuid=asterisk --regid=asterisk --init-groups test -r "$f" 2>/dev/null \
+            || echo "site-config: ${f#"$ST"/} is not readable for Asterisk (user asterisk, group 999): it is skipped" >&2
+    done
+fi
 link "$ST/media" /media
 link "$ST/voicemail" /var/spool/pbx/vm
 link "$ST/asterisk/db" /var/lib/asterisk/db

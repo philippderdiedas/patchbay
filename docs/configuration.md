@@ -42,6 +42,7 @@ link their paths into it):
 | Path | Owner, mode | Content |
 |---|---|---|
 | `config/` | operator | optional `theme.css`, `logo.svg`/`logo.png`, `icon-32.png`, `icon-180.png` (see Site and web interface) |
+| `config/asterisk/` | operator, readable by 999 | optional own Asterisk configuration (see Own Asterisk configuration) |
 | `secrets/` | root 700 | master secrets: `pg_password`, `pbxweb_db_pw`, `asterisk_db_pw`, `ami_pw`, `ari_pw`, `internal_key`; `dns_api_token` (placed by hand, only for `acme`) |
 | `secrets/postgres/` | root:999 750 | `pg_password` copy, `pg_hba.conf` → postgres, backup |
 | `secrets/migrate/` | 65534 700 | owner DSN, role password copies → migrations |
@@ -436,6 +437,60 @@ Logs: Asterisk's console (verbose call trace) goes to `docker logs`; all contain
 json-file driver limited to 5 × 20 MB (`deploy/compose.yml`). `messages.log` (notice, warning,
 error) and `security.log` in the `logs` volume are rotated daily by patchbay-web (`logger rotate`),
 seven generations are kept.
+
+### Own Asterisk configuration
+
+For things Patchbay does not do itself (an own application with AMI and AudioSocket, an extra
+peer, an own module), the site can add Asterisk configuration in `$PBX_DIR/config/asterisk/`
+(files readable by group 999, e.g. 644). Patchbay keeps running as before; these files only add to
+it.
+
+- **`<file>.d/*.conf`** is included at the end of the image's file of that name: `extensions.d`,
+  `func_odbc.d`, `manager.d`, `ari.d`, `pjsip.d`, `iax.d`, `confbridge.d`, `musiconhold.d`,
+  `features.d`, `queues.d`, `modules.d` (`load =` / `noload =` lines), `logger.d` (lines for
+  `[logfiles]`). Every file starts with its own `[section]` (`modules.d`, `logger.d`: may continue
+  `[modules]` / `[logfiles]`); no `#include` inside. Not usable either: queues `g<number>` (call
+  groups), hold music classes `default`, `app<n>`, `pl<n>` (from the database), names of trunks. Sections must not reuse a name of Patchbay (a context `[sub-user]`, a
+  transport `[transport-udp]`, the AMI user `pbxweb`): Asterisk would merge them into Patchbay's
+  own. Contexts `app-custom-*` belong to the custom apps.
+- **An own `<name>.conf`** that the image does not have (e.g. `sccp.conf` for a module Patchbay
+  does not use) is linked into `/etc/asterisk` at the start of the container. Files of the image
+  (`extensions.conf`, `pjsip.conf` …) cannot be replaced; such a file is ignored with a message in
+  the log.
+- Not extendable on purpose: `asterisk.conf`, `extconfig.conf`, `sorcery.conf`, `res_odbc.conf`,
+  `cdr*.conf`, `rtp.conf`, `http.conf`, `acl.conf`, `indications.conf` (paths, how devices and
+  groups come from the database, call records, one shared `[general]` each).
+
+Reaching an own context: a custom app (Admin → Apps) with an internal number whose template is
+just `same => n,Goto(myapp,s,1)`; it is then in the number plan, the phone book and selectable as a
+target (IVR key, call group, forwarding). Example for an application on the same host:
+
+```
+; config/asterisk/extensions.d/myapp.conf
+[myapp]
+exten => s,1,Answer()
+ same => n,AudioSocket(40325ec2-5efd-4bd3-805f-53576e581d13,127.0.0.1:9092)
+ same => n,Hangup()
+
+; config/asterisk/manager.d/myapp.conf   (AMI listens on 127.0.0.1:5038 only)
+[myapp]
+secret = <long random>
+read = call
+write = originate
+permit = 127.0.0.1/32
+```
+
+Calls handled only in own contexts appear in the call flows without their own steps; calls an
+application starts itself via AMI (`Originate`) bypass Patchbay's dialling permissions.
+
+**Check and reload** (`deploy/pbxctl`): `pbxctl asterisk-check` checks the folder in a throwaway
+container of the running image (supported folders, no replaced files, line syntax, no names of
+Patchbay, and the dialplan with the own files loads without errors); `pbxctl asterisk-reload`
+checks, then reloads only the modules whose folder exists (`dialplan reload`, `module reload
+res_pjsip.so` …; no restart, calls continue). New own `<name>.conf` files and
+`modules.d` need `docker compose restart asterisk`. Note that patchbay-web reloads the dialplan by
+itself whenever custom apps or busy lamps (hints) change, so a changed `extensions.d` file can
+become active then as well: check it before saving it there.
 
 ## Certificates and reverse proxy
 

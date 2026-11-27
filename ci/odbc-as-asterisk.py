@@ -12,7 +12,8 @@ import sys
 from pathlib import Path
 
 conf = Path(__file__).resolve().parent.parent / "asterisk/etc/func_odbc.conf"
-lines = [l for l in conf.read_text().splitlines() if not l.lstrip().startswith(";")]
+# comments and #include / #tryinclude lines (the site's func_odbc.d) are no part of a query
+lines = [l for l in conf.read_text().splitlines() if not l.lstrip().startswith((";", "#"))]
 text = "\n".join(lines) + "\n"
 failed = 0
 count = 0

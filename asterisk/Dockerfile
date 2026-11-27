@@ -115,8 +115,8 @@ RUN ln -s /media/asterisk /var/lib/asterisk/sounds/pbx \
 # /etc/asterisk-generated (links into the state directory; generated files are written by patchbay-web).
 COPY odbc.ini /etc/odbc.ini
 COPY etc/ /etc/asterisk/
-COPY bin/site-config.sh /usr/local/bin/site-config.sh
-RUN chmod 755 /usr/local/bin/site-config.sh && chmod -R a+rX,go-w /etc/asterisk /etc/odbc.ini
+COPY bin/site-config.sh bin/check-custom.sh /usr/local/bin/
+RUN chmod 755 /usr/local/bin/site-config.sh /usr/local/bin/check-custom.sh && chmod -R a+rX,go-w /etc/asterisk /etc/odbc.ini
 
 ARG ASTERISK_VERSION
 LABEL org.opencontainers.image.title="patchbay-asterisk" \

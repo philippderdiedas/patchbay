@@ -480,6 +480,17 @@ write = originate
 permit = 127.0.0.1/32
 ```
 
+**ARI from another host** (`PBX_ARI_TLS=ip:port`): Asterisk then also listens with HTTPS (TLS,
+`keys/voip.crt`) on that address, e.g. for a voice application on another host that controls calls
+via ARI (WebSocket `wss://<host>:8089/ari/events?app=<name>` with HTTP Basic or `api_key=user:pw`).
+Its user goes into `ari.d` (`[relay]` / `type = user` / `password = …`). The port carries all of
+ARI, for every ARI user (also Patchbay's own `pbxweb`), and an ARI user can start calls past
+Patchbay's dialling permissions and change Asterisk's configuration: Asterisk's HTTP server has no
+IP access list, so allow the port only from that one host in the host firewall. One address of
+this host, not `0.0.0.0`. patchbay-web keeps using `127.0.0.1:8088`.
+AudioSocket sends 8 kHz PCM and DTMF with `AudioSocket()`; other codecs (e.g. 16 kHz) through the
+channel driver (`Dial(AudioSocket/…)`).
+
 Calls handled only in own contexts appear in the call flows without their own steps; calls an
 application starts itself via AMI (`Originate`) bypass Patchbay's dialling permissions.
 

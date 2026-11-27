@@ -10,6 +10,8 @@
 #   PBX_EMERGENCY_TRUNK   trunk for 110/112 when the database is down (default: none)
 #   PBX_COUNTRY_CODE      own country calling code, e.g. 49          (required)
 #   PBX_EMERGENCY_NUMBERS emergency numbers, 2-3 digits, comma-separated (default: 112)
+#   PBX_ARI_TLS           ip:port of an extra HTTPS/ARI listener for the site's own ARI clients
+#                         (default: none; users in config/asterisk/ari.d, firewall the port)
 # Secrets (created by patchbay-init in the patchbay-web container under $PBX_STATE_DIR/secrets/asterisk,
 # copied to /etc/asterisk-secrets below):
 #   internal_key    -> global PBX_INTERNAL_KEY, sent by the dialplan's CURL calls to patchbay-web's
@@ -105,6 +107,17 @@ check_nets PBX_DEVICE_NETS_UDP "$UDP"
 check_nets PBX_DEVICE_NETS_TLS "$TLS"
 check_nets PBX_LOCAL_NETS "$LOCAL"
 case "$EXT$EMERG" in *[!0-9a-zA-Z.:_-]*) echo "site-config: invalid PBX_EXTERNAL_ADDRESS or PBX_EMERGENCY_TRUNK" >&2; exit 1 ;; esac
+ARI_TLS=${PBX_ARI_TLS:-}
+# one IPv4 address of this host and a port; not 0.0.0.0 (host network: that would be every
+# interface, the internet side included)
+if [ -n "$ARI_TLS" ]; then
+    ok=$(printf '%s\n' "$ARI_TLS" | awk -F: 'NF == 2 && $2 ~ /^[0-9]+$/ && $2 >= 1 && $2 <= 65535 {
+        n = split($1, o, "."); if (n != 4) exit
+        for (i = 1; i <= 4; i++) if (o[i] !~ /^[0-9]+$/ || o[i] > 255) exit
+        if ($1 == "0.0.0.0") exit
+        print "yes" }')
+    [ "$ok" = yes ] || { echo "site-config: PBX_ARI_TLS must be one address of this host and a port, e.g. 10.0.0.5:8089 (not 0.0.0.0)" >&2; exit 1; }
+fi
 
 {
     echo "; Generated at container start from the environment (asterisk/bin/site-config.sh)."
@@ -196,6 +209,19 @@ secret() {
     echo "read_only = no"
     echo "password = $(secret ari_pw)"
 } > "$OUT/ari.conf"
+
+{
+    echo "; Generated at container start (asterisk/bin/site-config.sh); included in [general] of http.conf."
+    if [ -n "$ARI_TLS" ]; then
+        # an extra HTTPS listener for ARI clients of the site (users in config/asterisk/ari.d); the
+        # plain listener stays on 127.0.0.1 for patchbay-web. No IP access list in Asterisk's HTTP
+        # server: the host firewall limits who may connect.
+        echo "tlsenable = yes"
+        echo "tlsbindaddr = $ARI_TLS"
+        echo "tlscertfile = /etc/asterisk-keys/voip.crt"
+        echo "tlsprivatekey = /etc/asterisk-keys/voip.key"
+    fi
+} > "$OUT/http.conf"
 
 chmod 644 "$OUT"/*.conf
 # files with secrets: root and the asterisk group only

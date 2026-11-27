@@ -57,14 +57,14 @@ asterisk-check|asterisk-reload)
         echo "$custom does not exist: no own configuration"
     fi
     if [ "$cmd" = asterisk-reload ]; then
-        # only what the folders extend (a full "core reload" would also reload res_odbc, AMI and
-        # HTTP under patchbay-web's feet); new own <name>.conf files and modules.d need a restart
+        # the modules the folders extend, not a full "core reload" (that would also reload res_odbc
+        # and HTTP under patchbay-web's feet); new own <name>.conf files and modules.d need a restart
         declare -A rel=([extensions]="dialplan reload" [func_odbc]="module reload func_odbc.so"
             [manager]="manager reload" [ari]="module reload res_ari.so" [pjsip]="module reload res_pjsip.so"
             [iax]="iax2 reload" [confbridge]="module reload app_confbridge.so" [musiconhold]="moh reload"
             [features]="module reload features" [queues]="module reload app_queue.so" [logger]="logger reload")
+        # all of them, also for folders that do not exist (any more): a removed folder must vanish too
         for d in "${!rel[@]}"; do
-            [ -d "$custom/$d.d" ] || continue
             echo "== ${rel[$d]}"
             docker exec "$ast" asterisk -rx "${rel[$d]}"
         done

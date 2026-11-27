@@ -486,8 +486,8 @@ application starts itself via AMI (`Originate`) bypass Patchbay's dialling permi
 **Check and reload** (`deploy/pbxctl`): `pbxctl asterisk-check` checks the folder in a throwaway
 container of the running image (supported folders, no replaced files, line syntax, no names of
 Patchbay, and the dialplan with the own files loads without errors); `pbxctl asterisk-reload`
-checks, then reloads only the modules whose folder exists (`dialplan reload`, `module reload
-res_pjsip.so` …; no restart, calls continue). New own `<name>.conf` files and
+checks, then reloads the modules the folders extend (`dialplan reload`, `module reload
+res_pjsip.so` …, also when a folder was removed; no restart, calls continue). New own `<name>.conf` files and
 `modules.d` need `docker compose restart asterisk`. Note that patchbay-web reloads the dialplan by
 itself whenever custom apps or busy lamps (hints) change, so a changed `extensions.d` file can
 become active then as well: check it before saving it there.
